@@ -78,10 +78,6 @@ export async function saveSettingsAction(
       telegramBotToken: keepSecret(input.telegramBotToken, current.settings.telegramBotToken),
       aiGatewayApiKey: keepSecret(input.aiGatewayApiKey, current.settings.aiGatewayApiKey),
       vercelApiToken: keepSecret(input.vercelApiToken, current.settings.vercelApiToken),
-      persistenceDatabaseUrl: keepSecret(
-        input.persistenceDatabaseUrl,
-        current.settings.persistenceDatabaseUrl,
-      ),
       vercelProjectId: input.vercelProjectId,
       vercelTeamId: input.vercelTeamId,
       allowedUserIds: input.allowedUserIds,

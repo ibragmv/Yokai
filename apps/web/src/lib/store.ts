@@ -10,6 +10,7 @@ import type {
   DashboardSettings,
   SandboxRecord,
   SessionRecord,
+  StoredSnapshotRecord,
   UsageSnapshot,
 } from '@/lib/types';
 import { resolveVercelProjectId, resolveVercelTeamId } from '@/lib/vercel/project';
@@ -18,6 +19,7 @@ import { api } from '@convex/_generated/api';
 export type DashboardState = {
   settings: DashboardSettings;
   sandbox: SandboxRecord | null;
+  storedSnapshot: StoredSnapshotRecord | null;
   sessions: SessionRecord[];
   commands: CommandRecord[];
   usage: UsageSnapshot[];
@@ -32,7 +34,6 @@ const SECRET_SETTING_KEYS = [
   'aiGatewayApiKey',
   'vercelApiToken',
   'gatewayAuthToken',
-  'persistenceDatabaseUrl',
 ] as const;
 
 type SecretSettingKey = (typeof SECRET_SETTING_KEYS)[number];
@@ -49,6 +50,7 @@ type PersistedDashboardState = {
   settings: Omit<DashboardSettings, SecretSettingKey>;
   encryptedSettings: Record<SecretSettingKey, EncryptedField>;
   sandbox: SandboxRecord | null;
+  storedSnapshot: StoredSnapshotRecord | null;
   sessions: SessionRecord[];
   commands: CommandRecord[];
   usage: UsageSnapshot[];
@@ -56,11 +58,12 @@ type PersistedDashboardState = {
 
 type LegacyPersistedDashboardState = Omit<
   PersistedDashboardState,
-  'settings' | 'encryptedSettings' | 'sandbox'
+  'settings' | 'encryptedSettings' | 'sandbox' | 'storedSnapshot'
 > & {
   settings: LegacySettings;
   encryptedSettings?: Partial<Record<SecretSettingKey, EncryptedField>>;
   sandbox: LegacySandboxRecord | null;
+  storedSnapshot?: StoredSnapshotRecord | null;
 };
 
 function isEncryptionAuthError(error: unknown) {
@@ -89,19 +92,19 @@ function createDefaultState(): DashboardState {
       telegramBotToken: '',
       aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY ?? '',
       vercelApiToken: process.env.VERCEL_ACCESS_TOKEN ?? '',
-      persistenceDatabaseUrl: process.env.OPENCLAW_PERSISTENCE_DATABASE_URL ?? '',
       vercelProjectId: resolveVercelProjectId(),
       vercelTeamId: resolveVercelTeamId(),
       allowedUserIds: '',
       allowedGroupIds: '',
       requireMention: true,
-      autoRecreateSandbox: Boolean(process.env.OPENCLAW_PERSISTENCE_DATABASE_URL),
+      autoRecreateSandbox: false,
       timeoutSeconds: 900,
       defaultModel: 'vercel-ai-gateway/anthropic/claude-sonnet-4.6',
       gatewayAuthToken: randomUUID(),
       updatedAt: null,
     },
     sandbox: null,
+    storedSnapshot: null,
     sessions: [],
     commands: [],
     usage: [],
@@ -127,7 +130,6 @@ function splitSettings(settings: DashboardSettings) {
       aiGatewayApiKey: settings.aiGatewayApiKey,
       vercelApiToken: settings.vercelApiToken,
       gatewayAuthToken: settings.gatewayAuthToken,
-      persistenceDatabaseUrl: settings.persistenceDatabaseUrl,
     },
   };
 }
@@ -146,6 +148,7 @@ async function serializeState(state: DashboardState): Promise<PersistedDashboard
     settings: plainSettings,
     encryptedSettings,
     sandbox: state.sandbox,
+    storedSnapshot: state.storedSnapshot,
     sessions: state.sessions,
     commands: state.commands,
     usage: state.usage,
@@ -184,6 +187,7 @@ async function deserializeState(payload: LegacyPersistedDashboardState): Promise
           lastSnapshotAt: payload.sandbox.lastSnapshotAt ?? null,
         }
       : null,
+    storedSnapshot: payload.storedSnapshot ?? null,
     sessions: payload.sessions,
     commands: payload.commands,
     usage: payload.usage,
@@ -208,6 +212,7 @@ function normalizeState(input: Partial<DashboardState> | null | undefined): Dash
           lastSnapshotAt: input.sandbox.lastSnapshotAt ?? null,
         }
       : fallback.sandbox,
+    storedSnapshot: input?.storedSnapshot ?? fallback.storedSnapshot,
     sessions: Array.isArray(input?.sessions) ? input.sessions : fallback.sessions,
     commands: Array.isArray(input?.commands) ? input.commands : fallback.commands,
     usage: Array.isArray(input?.usage) ? input.usage : fallback.usage,

@@ -17,7 +17,6 @@ function sanitizeSettings(settings: DashboardSettings): DashboardPublicSettings 
     telegramBotToken: maskSecret(settings.telegramBotToken),
     aiGatewayApiKey: maskSecret(settings.aiGatewayApiKey),
     vercelApiToken: maskSecret(settings.vercelApiToken),
-    persistenceDatabaseUrl: maskSecret(settings.persistenceDatabaseUrl),
     gatewayAuthToken: maskSecret(settings.gatewayAuthToken),
   };
 }

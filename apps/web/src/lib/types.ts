@@ -5,7 +5,6 @@ export type SettingsFormValues = {
   telegramBotToken: string;
   aiGatewayApiKey: string;
   vercelApiToken: string;
-  persistenceDatabaseUrl: string;
   vercelProjectId: string;
   vercelTeamId: string;
   allowedUserIds: string;
@@ -72,6 +71,14 @@ export type UsageSnapshot = {
   cpuMs: number | null;
   networkBytes: number | null;
   recordedAt: number;
+};
+
+export type StoredSnapshotRecord = {
+  snapshotId: string;
+  sourceSandboxId: string;
+  createdAt: number;
+  expiresAt: number | null;
+  updatedAt: number;
 };
 
 export type DashboardPayload = {

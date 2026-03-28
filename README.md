@@ -61,7 +61,6 @@ VERCEL_OIDC_TOKEN=
 VERCEL_ACCESS_TOKEN=
 VERCEL_PROJECT_ID=
 VERCEL_TEAM_ID=
-OPENCLAW_PERSISTENCE_DATABASE_URL=
 ```
 
 Notes:
@@ -69,7 +68,6 @@ Notes:
 - `YOKAI_ENCRYPTION_KEY` is mandatory. Without it, Yokai cannot decrypt encrypted dashboard secrets from Convex.
 - `YOKAI_ALLOWED_ORIGINS` controls the allowed origins for Next.js Server Actions.
 - `AI_GATEWAY_API_KEY`, `VERCEL_ACCESS_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID` can be prefilled from env or later managed from the dashboard.
-- `OPENCLAW_PERSISTENCE_DATABASE_URL` can prefill the encrypted sandbox persistence URL and enables auto-recreate by default for newly added settings.
 - `VERCEL_OIDC_TOKEN` is only available from env and is forwarded into the sandbox when present.
 
 ## Local Development
@@ -123,7 +121,7 @@ bun run convex:logs:prod
 
 - the dashboard auto-refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint
 - `Start sandbox` creates a new Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`
-- when auto-recreate is enabled, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` in PostgreSQL, and boots the replacement sandbox from that snapshot
+- when auto-recreate is enabled, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` in Convex state, and boots the replacement sandbox from that snapshot
 - `Sync` fetches OpenClaw session data and appends runtime usage snapshots
 - recent command stdout/stderr is stored in Convex after secret redaction
 
@@ -131,7 +129,7 @@ bun run convex:logs:prod
 
 Convex stores three main data areas:
 
-- `states`: the persisted dashboard payload, including sandbox status, settings, sessions, commands, and usage snapshots
+- `states`: the persisted dashboard payload, including sandbox status, latest stored snapshot metadata, settings, sessions, commands, and usage snapshots
 - `credentials`: admin login and password hash metadata
 - `sessions`: active admin sessions used for cookie validation
 

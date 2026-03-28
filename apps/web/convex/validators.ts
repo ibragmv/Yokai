@@ -24,8 +24,18 @@ export const encryptedSettingsValidator = v.object({
   aiGatewayApiKey: encryptedFieldValidator,
   vercelApiToken: encryptedFieldValidator,
   gatewayAuthToken: encryptedFieldValidator,
-  persistenceDatabaseUrl: v.optional(encryptedFieldValidator),
 });
+
+export const storedSnapshotValidator = v.union(
+  v.object({
+    snapshotId: v.string(),
+    sourceSandboxId: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.union(v.number(), v.null()),
+    updatedAt: v.number(),
+  }),
+  v.null(),
+);
 
 export const sandboxValidator = v.union(
   v.object({
@@ -88,6 +98,7 @@ export const dashboardStatePayloadValidator = v.object({
   settings: settingsValidator,
   encryptedSettings: encryptedSettingsValidator,
   sandbox: sandboxValidator,
+  storedSnapshot: v.optional(storedSnapshotValidator),
   sessions: v.array(sessionRecordValidator),
   commands: v.array(commandRecordValidator),
   usage: v.array(usageSnapshotValidator),

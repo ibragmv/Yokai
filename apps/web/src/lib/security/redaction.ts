@@ -12,7 +12,6 @@ function collectSecrets(settings: DashboardSettings): string[] {
     settings.aiGatewayApiKey,
     settings.vercelApiToken,
     settings.gatewayAuthToken,
-    settings.persistenceDatabaseUrl,
   ].filter(Boolean);
 }
 

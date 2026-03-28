@@ -21,7 +21,6 @@ function createFormValues(payload: DashboardPayload): SettingsFormValues {
     telegramBotToken: payload.settings.telegramBotToken,
     aiGatewayApiKey: payload.settings.aiGatewayApiKey,
     vercelApiToken: payload.settings.vercelApiToken,
-    persistenceDatabaseUrl: payload.settings.persistenceDatabaseUrl,
     vercelProjectId: payload.settings.vercelProjectId,
     vercelTeamId: payload.settings.vercelTeamId,
     allowedUserIds: payload.settings.allowedUserIds,
@@ -586,22 +585,6 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                     spellCheck={false}
                     type="password"
                     value={draft.vercelApiToken}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Supabase / PostgreSQL URL</span>
-                  <input
-                    autoComplete="off"
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        persistenceDatabaseUrl: event.target.value,
-                      }))
-                    }
-                    spellCheck={false}
-                    type="password"
-                    value={draft.persistenceDatabaseUrl}
                   />
                 </label>
 

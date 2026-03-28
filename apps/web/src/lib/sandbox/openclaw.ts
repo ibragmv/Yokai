@@ -63,7 +63,7 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
   sandboxRecord: SandboxRecord;
   commands: CommandRecord[];
 }> {
-  const storedSnapshot = await loadStoredSnapshot(settings);
+  const storedSnapshot = await loadStoredSnapshot();
   const timeout = getSandboxTimeoutMs(settings);
   const sandbox = storedSnapshot
     ? await Sandbox.create({
@@ -267,7 +267,7 @@ export async function syncOpenClawSessions(
         contextTokens: typeof session.contextTokens === 'number' ? session.contextTokens : null,
       }))
     : [];
-  const storedSnapshot = await loadStoredSnapshot(settings);
+  const storedSnapshot = await loadStoredSnapshot();
 
   return {
     sandbox: {
@@ -293,17 +293,13 @@ export async function syncOpenClawSessions(
 
 export async function snapshotOpenClawSandbox(
   sandboxId: string,
-  settings: DashboardSettings,
+  _settings: DashboardSettings,
 ): Promise<CommandRecord | null> {
-  if (!settings.persistenceDatabaseUrl.trim()) {
-    return null;
-  }
-
-  const previousSnapshot = await loadStoredSnapshot(settings);
+  const previousSnapshot = await loadStoredSnapshot();
   const sandbox = await Sandbox.get({ sandboxId });
   const startedAt = Date.now();
   const snapshot = await sandbox.snapshot({ expiration: SNAPSHOT_EXPIRATION_MS });
-  await saveStoredSnapshot(settings, snapshot);
+  await saveStoredSnapshot(snapshot);
 
   if (previousSnapshot && previousSnapshot.snapshotId !== snapshot.snapshotId) {
     await deleteRemoteSnapshot(previousSnapshot.snapshotId);
@@ -312,7 +308,7 @@ export async function snapshotOpenClawSandbox(
   return createSystemCommand(
     sandboxId,
     'system:create-snapshot',
-    `Stored snapshot ${snapshot.snapshotId} in PostgreSQL.`,
+    `Stored snapshot ${snapshot.snapshotId} in Convex.`,
     startedAt,
   );
 }
@@ -345,7 +341,7 @@ export async function reconcileOpenClawSandboxLifecycle() {
         return;
       }
 
-      const previousSnapshot = await loadStoredSnapshot(state.settings);
+      const previousSnapshot = await loadStoredSnapshot();
       let snapshotCommand: CommandRecord | null = null;
 
       try {
