@@ -37,6 +37,13 @@ const SECRET_SETTING_KEYS = [
 
 type SecretSettingKey = (typeof SECRET_SETTING_KEYS)[number];
 type EncryptedField = Awaited<ReturnType<typeof encryptValue>>;
+type LegacySandboxRecord = Omit<
+  SandboxRecord,
+  'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'
+> &
+  Partial<Pick<SandboxRecord, 'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'>>;
+type LegacySettings = Omit<DashboardSettings, SecretSettingKey | 'autoRecreateSandbox'> &
+  Partial<Pick<DashboardSettings, 'autoRecreateSandbox'>>;
 
 type PersistedDashboardState = {
   settings: Omit<DashboardSettings, SecretSettingKey>;
@@ -47,8 +54,13 @@ type PersistedDashboardState = {
   usage: UsageSnapshot[];
 };
 
-type LegacyPersistedDashboardState = Omit<PersistedDashboardState, 'encryptedSettings'> & {
+type LegacyPersistedDashboardState = Omit<
+  PersistedDashboardState,
+  'settings' | 'encryptedSettings' | 'sandbox'
+> & {
+  settings: LegacySettings;
   encryptedSettings?: Partial<Record<SecretSettingKey, EncryptedField>>;
+  sandbox: LegacySandboxRecord | null;
 };
 
 function isEncryptionAuthError(error: unknown) {
@@ -160,9 +172,18 @@ async function deserializeState(payload: LegacyPersistedDashboardState): Promise
   return normalizeState({
     settings: {
       ...payload.settings,
+      autoRecreateSandbox:
+        payload.settings.autoRecreateSandbox ?? fallback.settings.autoRecreateSandbox,
       ...decryptedSettings,
     },
-    sandbox: payload.sandbox,
+    sandbox: payload.sandbox
+      ? {
+          ...payload.sandbox,
+          sourceSnapshotId: payload.sandbox.sourceSnapshotId ?? null,
+          expiresAt: payload.sandbox.expiresAt ?? null,
+          lastSnapshotAt: payload.sandbox.lastSnapshotAt ?? null,
+        }
+      : null,
     sessions: payload.sessions,
     commands: payload.commands,
     usage: payload.usage,
