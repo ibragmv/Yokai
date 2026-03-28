@@ -1,12 +1,9 @@
 import 'server-only';
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 
-const DATA_DIRECTORY = path.join(process.cwd(), '.data');
-const KEY_FILE = path.join(DATA_DIRECTORY, 'yokai-master-key');
 const CIPHER = 'aes-256-gcm';
+const ENCRYPTION_KEY_ENV = 'YOKAI_ENCRYPTION_KEY';
 
 type EncryptedPayload = {
   iv: string;
@@ -14,23 +11,20 @@ type EncryptedPayload = {
   value: string;
 };
 
-async function getOrCreateLocalKey(): Promise<string> {
-  try {
-    return (await readFile(KEY_FILE, 'utf8')).trim();
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
+function getEncryptionSecret(): string {
+  const encryptionKey = process.env[ENCRYPTION_KEY_ENV]?.trim();
 
-    await mkdir(DATA_DIRECTORY, { recursive: true });
-    const nextKey = randomBytes(32).toString('base64url');
-    await writeFile(KEY_FILE, nextKey, { encoding: 'utf8', mode: 0o600 });
-    return nextKey;
+  if (!encryptionKey) {
+    throw new Error(
+      `${ENCRYPTION_KEY_ENV} is required. Configure a stable shared secret for all environments.`,
+    );
   }
+
+  return encryptionKey;
 }
 
 async function loadEncryptionKey(): Promise<Buffer> {
-  const sourceKey = process.env.YOKAI_ENCRYPTION_KEY || (await getOrCreateLocalKey());
+  const sourceKey = getEncryptionSecret();
   return createHash('sha256').update(sourceKey).digest();
 }
 

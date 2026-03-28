@@ -46,6 +46,12 @@ type PersistedDashboardState = {
   usage: UsageSnapshot[];
 };
 
+function isEncryptionAuthError(error: unknown) {
+  return (
+    error instanceof Error && error.message === 'Unsupported state or unable to authenticate data'
+  );
+}
+
 function createDefaultState(): DashboardState {
   return {
     settings: {
@@ -168,7 +174,17 @@ export async function readDashboardState(): Promise<DashboardState> {
     return initialState;
   }
 
-  return deserializeState(record.payload);
+  try {
+    return await deserializeState(record.payload);
+  } catch (error) {
+    if (!isEncryptionAuthError(error)) {
+      throw error;
+    }
+
+    const initialState = createDefaultState();
+    await writeStateRecord(initialState);
+    return initialState;
+  }
 }
 
 export async function updateDashboardState(
