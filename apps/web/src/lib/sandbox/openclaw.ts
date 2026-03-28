@@ -152,21 +152,36 @@ export async function syncOpenClawSessions(sandboxId: string): Promise<{
   commands: CommandRecord[];
 }> {
   const sandbox = await Sandbox.get({ sandboxId });
-  const sessionsCommand = await runTrackedCommand(sandbox, {
+  const startedAt = Date.now();
+  const args = [
+    '-lc',
+    [
+      `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
+      `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
+      'openclaw sessions --all-agents --json',
+    ].join(' && '),
+  ];
+  const sessionsResult = await sandbox.runCommand({
     cmd: 'bash',
-    args: [
-      '-lc',
-      [
-        `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
-        `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
-        'openclaw sessions --all-agents --json',
-      ].join(' && '),
-    ],
+    args,
+    cwd: OPENCLAW_ROOT,
   });
+  const rawStdout = await sessionsResult.stdout();
+  const rawStderr = await sessionsResult.stderr();
+  const sessionsCommand: CommandRecord = {
+    cmdId: sessionsResult.cmdId,
+    sandboxId,
+    command: 'bash',
+    args,
+    status: sessionsResult.exitCode === 0 ? 'succeeded' : 'failed',
+    exitCode: sessionsResult.exitCode,
+    stdout: truncate(rawStdout) || null,
+    stderr: truncate(rawStderr) || null,
+    startedAt,
+    finishedAt: Date.now(),
+  };
 
-  const parsed = sessionsCommand.command.stdout
-    ? JSON.parse(sessionsCommand.command.stdout)
-    : { sessions: [] };
+  const parsed = rawStdout ? JSON.parse(rawStdout) : { sessions: [] };
   const sessions = Array.isArray(parsed.sessions)
     ? parsed.sessions.map((session: Record<string, unknown>) => ({
         sessionKey: String(session.key ?? ''),
@@ -195,7 +210,7 @@ export async function syncOpenClawSessions(sandboxId: string): Promise<{
       updatedAt: Date.now(),
     },
     sessions,
-    commands: [sessionsCommand.command],
+    commands: [sessionsCommand],
   };
 }
 

@@ -4,16 +4,15 @@
   "packageManager": "bun@1.3.10",
   "workspaces": ["apps/*"],
   "scripts": {
-    "dev": "turbo dev",
-    "build": "turbo build",
-    "lint": "turbo lint",
-    "typecheck": "turbo typecheck",
+    "dev": "bun run --cwd apps/web dev",
+    "build": "bun run --cwd apps/web build",
+    "lint": "bun run --cwd apps/web lint",
+    "typecheck": "bun run --cwd apps/web typecheck",
     "format": "biome format --write .",
     "check": "biome check ."
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "turbo": "^2.8.0",
     "typescript": "^5.8.2"
   }
 }

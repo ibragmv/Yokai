@@ -1,15 +1,19 @@
 import type { Metadata } from 'next';
 
-import '@fontsource/ibm-plex-mono/400.css';
-import '@fontsource/ibm-plex-mono/500.css';
-import '@fontsource/space-grotesk/400.css';
-import '@fontsource/space-grotesk/500.css';
-import '@fontsource/space-grotesk/700.css';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Yokai Control Plane',
-  description: 'Administer OpenClaw running inside Vercel Sandbox.',
+  title: {
+    default: 'Yokai Control Room',
+    template: '%s | Yokai',
+  },
+  description: 'Run OpenClaw inside Vercel Sandbox and monitor sessions, usage, and runtime state.',
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#0f172a',
 };
 
 export default function RootLayout({

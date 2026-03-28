@@ -72,3 +72,9 @@ export type DashboardPayload = {
   usage: UsageSnapshot[];
   availableModels: string[];
 };
+
+export type DashboardActionResult = {
+  ok: boolean;
+  message: string;
+  payload: DashboardPayload;
+};

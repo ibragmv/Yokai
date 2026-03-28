@@ -1,249 +1,330 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useEffectEvent, useState, useTransition } from 'react';
 
-import type { DashboardPayload, SettingsFormValues } from '@/lib/types';
+import { runSandboxAction, saveSettingsAction } from '@/app/actions';
+import type {
+  DashboardActionResult,
+  DashboardPayload,
+  SettingsFormValues,
+  UsageSnapshot,
+} from '@/lib/types';
 import { formatRelativeDate } from '@/lib/utils';
 
-type Section = 'overview' | 'sessions' | 'calls' | 'settings';
-type SettingsSection = 'telegram' | 'models' | 'security';
+type Section = 'overview' | 'activity' | 'settings';
+
+function createFormValues(payload: DashboardPayload): SettingsFormValues {
+  return {
+    displayName: payload.settings.displayName,
+    telegramBotToken: payload.settings.telegramBotToken,
+    aiGatewayApiKey: payload.settings.aiGatewayApiKey,
+    vercelApiToken: payload.settings.vercelApiToken,
+    vercelProjectId: payload.settings.vercelProjectId,
+    vercelTeamId: payload.settings.vercelTeamId,
+    allowedUserIds: payload.settings.allowedUserIds,
+    allowedGroupIds: payload.settings.allowedGroupIds,
+    requireMention: payload.settings.requireMention,
+    timeoutSeconds: payload.settings.timeoutSeconds,
+    defaultModel: payload.settings.defaultModel,
+  };
+}
+
+function isSameForm(left: SettingsFormValues, right: SettingsFormValues) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function formatUsageValue(snapshot: UsageSnapshot) {
+  if (snapshot.source === 'ai-gateway') {
+    return snapshot.creditsRemaining ?? snapshot.creditsUsed ?? 0;
+  }
+
+  return snapshot.cpuMs ?? 0;
+}
 
 export function DashboardShell({ initialData }: { initialData: DashboardPayload }) {
   const [data, setData] = useState(initialData);
+  const [draft, setDraft] = useState(() => createFormValues(initialData));
   const [section, setSection] = useState<Section>('overview');
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>('telegram');
+  const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [message, setMessage] = useState<string | null>(null);
-  const [form, setForm] = useState<SettingsFormValues>({
-    displayName: data.settings.displayName,
-    telegramBotToken: data.settings.telegramBotToken,
-    aiGatewayApiKey: data.settings.aiGatewayApiKey,
-    vercelApiToken: data.settings.vercelApiToken,
-    vercelProjectId: data.settings.vercelProjectId,
-    vercelTeamId: data.settings.vercelTeamId,
-    allowedUserIds: data.settings.allowedUserIds,
-    allowedGroupIds: data.settings.allowedGroupIds,
-    requireMention: data.settings.requireMention,
-    timeoutSeconds: data.settings.timeoutSeconds,
-    defaultModel: data.settings.defaultModel,
+
+  const isDirty = !isSameForm(draft, createFormValues(data));
+
+  function applyPayload(payload: DashboardPayload, options?: { preserveDraft?: boolean }) {
+    setData(payload);
+
+    if (!options?.preserveDraft) {
+      setDraft(createFormValues(payload));
+    }
+  }
+
+  async function readDashboard(preserveDraft: boolean) {
+    const response = await fetch('/api/overview', {
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to refresh dashboard (${response.status})`);
+    }
+
+    const payload = (await response.json()) as DashboardPayload;
+    applyPayload(payload, { preserveDraft });
+    return payload;
+  }
+
+  const refreshLiveData = useEffectEvent(async () => {
+    try {
+      await readDashboard(isDirty);
+    } catch {}
   });
 
-  async function refresh() {
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void refreshLiveData();
+      }
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [refreshLiveData]);
+
+  function handleResult(result: DashboardActionResult, preserveDraft = false) {
+    applyPayload(result.payload, { preserveDraft });
+    setNotice(result.message);
+  }
+
+  function refreshDashboard() {
     startTransition(() => {
       void (async () => {
-        const response = await fetch('/api/overview', { cache: 'no-store' });
-        const payload: DashboardPayload = await response.json();
-        setData(payload);
-        setMessage('Dashboard synced.');
+        try {
+          const payload = await readDashboard(isDirty);
+          setNotice(`Live snapshot updated at ${formatRelativeDate(payload.settings.updatedAt)}.`);
+        } catch (error) {
+          setNotice(error instanceof Error ? error.message : 'Failed to refresh dashboard.');
+        }
       })();
     });
   }
 
-  async function runSandboxAction(action: 'start' | 'stop' | 'sync') {
+  function submitSettings() {
     startTransition(() => {
       void (async () => {
-        const response = await fetch('/api/sandbox', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ action }),
-        });
-        const payload: DashboardPayload = await response.json();
-        setData(payload);
-        setMessage(`Sandbox action completed: ${action}.`);
+        try {
+          const result = await saveSettingsAction(draft);
+          handleResult(result);
+        } catch (error) {
+          setNotice(error instanceof Error ? error.message : 'Failed to save settings.');
+        }
       })();
     });
   }
 
-  async function saveSettings() {
+  function executeSandboxAction(action: 'start' | 'stop' | 'sync') {
     startTransition(() => {
       void (async () => {
-        const response = await fetch('/api/settings', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(form),
-        });
-        const payload: DashboardPayload = await response.json();
-        setData(payload);
-        setMessage('Settings saved.');
+        try {
+          const result = await runSandboxAction(action);
+          handleResult(result, action === 'sync' && isDirty);
+        } catch (error) {
+          setNotice(error instanceof Error ? error.message : 'Sandbox action failed.');
+        }
       })();
     });
   }
 
   const stats = [
     {
-      label: 'Sandbox',
+      label: 'Runtime state',
       value: data.sandbox?.status ?? 'idle',
+      detail: data.sandbox?.runtime ?? 'No sandbox yet',
     },
     {
-      label: 'Allowed IDs',
-      value: form.allowedUserIds.split(',').filter(Boolean).length.toString(),
+      label: 'Tracked sessions',
+      value: String(data.sessions.length),
+      detail: data.sessions[0] ? formatRelativeDate(data.sessions[0].updatedAt) : 'No session data',
     },
     {
-      label: 'Sessions',
-      value: data.sessions.length.toString(),
+      label: 'Recent commands',
+      value: String(data.commands.length),
+      detail: data.commands[0] ? formatRelativeDate(data.commands[0].startedAt) : 'No command log',
     },
     {
-      label: 'Calls logged',
-      value: data.commands.length.toString(),
+      label: 'Allowlisted users',
+      value: String(
+        draft.allowedUserIds
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean).length,
+      ),
+      detail: draft.requireMention ? 'Mention required in groups' : 'Free in groups',
     },
   ];
 
   return (
-    <div className="page-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark" />
-          <div>Yokai</div>
-        </div>
+    <main className="dashboard-page">
+      <div className="dashboard-backdrop" />
 
-        <nav className="nav">
-          {(['overview', 'sessions', 'calls', 'settings'] as const).map((item) => (
-            <button
-              data-active={section === item}
-              key={item}
-              onClick={() => setSection(item)}
-              type="button"
-            >
-              {item[0].toUpperCase() + item.slice(1)}
-            </button>
-          ))}
-        </nav>
-
-        <div className="panel panel-body">
-          <div className="muted">OpenClaw</div>
-          <div style={{ marginTop: 8, fontSize: '1.1rem' }}>{data.settings.displayName}</div>
-          <div className="status-line" style={{ marginTop: 10 }}>
-            <span className="pill" data-status={data.sandbox?.status ?? 'starting'}>
-              {data.sandbox?.status ?? 'idle'}
-            </span>
-          </div>
-        </div>
-      </aside>
-
-      <main className="main">
-        <section className="hero">
-          <div>
-            <h1>OpenClaw control plane</h1>
-            <p>
-              Run the official OpenClaw gateway inside Vercel Sandbox, lock Telegram access to an
-              explicit allowlist, and keep sessions, usage, and command activity visible from a
-              single dashboard.
+      <section className="dashboard-frame">
+        <header className="hero-panel">
+          <div className="hero-copy">
+            <p className="eyebrow">OpenClaw sandbox operations</p>
+            <h1>{data.settings.displayName}</h1>
+            <p className="hero-text">
+              A live control room for sandbox lifecycle, gateway configuration, session telemetry,
+              and command history with direct server-side state instead of stale middle layers.
             </p>
           </div>
 
-          <div className="hero-actions">
-            <button className="button-ghost" onClick={() => refresh()} type="button">
-              Refresh
-            </button>
-            <button className="button" onClick={() => runSandboxAction('start')} type="button">
-              Start sandbox
-            </button>
-          </div>
-        </section>
+          <div className="hero-side">
+            <div className="status-card">
+              <span className="status-label">Current runtime</span>
+              <span className={`status-pill status-${data.sandbox?.status ?? 'idle'}`}>
+                {data.sandbox?.status ?? 'idle'}
+              </span>
+              <p className="status-copy">
+                {data.sandbox?.gatewayUrl
+                  ? data.sandbox.gatewayUrl
+                  : 'Sandbox gateway URL appears here after boot.'}
+              </p>
+            </div>
 
-        {message ? <div className="notice">{message}</div> : null}
+            <div className="action-row">
+              <button className="secondary-button" onClick={refreshDashboard} type="button">
+                Refresh
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => executeSandboxAction('sync')}
+                type="button"
+              >
+                Sync
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => executeSandboxAction('start')}
+                type="button"
+              >
+                Start sandbox
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div className="toolbar">
+          <div className="segmented-control" role="tablist" aria-label="Dashboard sections">
+            {(['overview', 'activity', 'settings'] as const).map((item) => (
+              <button
+                aria-selected={section === item}
+                className="segment"
+                data-active={section === item}
+                key={item}
+                onClick={() => setSection(item)}
+                role="tab"
+                type="button"
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+
+          <div className="toolbar-meta">
+            <span>{isPending ? 'Working…' : 'Auto-refresh every 15s'}</span>
+            <span>{isDirty ? 'Unsaved settings preserved' : 'Settings in sync'}</span>
+          </div>
+        </div>
+
+        {notice ? <div className="notice-banner">{notice}</div> : null}
 
         {section === 'overview' ? (
           <>
-            <section className="grid overview-grid">
+            <section className="stat-grid">
               {stats.map((stat) => (
-                <article className="panel stat-card" key={stat.label}>
+                <article className="stat-panel" key={stat.label}>
                   <span>{stat.label}</span>
                   <strong>{stat.value}</strong>
+                  <small>{stat.detail}</small>
                 </article>
               ))}
             </section>
 
-            <section className="layout-grid">
-              <article className="panel">
-                <div className="panel-header">
-                  <h2>Runtime</h2>
-                  <span
-                    className="pill"
-                    data-status={data.sandbox?.status === 'running' ? 'running' : 'starting'}
+            <section className="content-grid">
+              <article className="surface-card runtime-card">
+                <div className="card-heading">
+                  <div>
+                    <p className="eyebrow">Runtime</p>
+                    <h2>Sandbox envelope</h2>
+                  </div>
+                  <button
+                    className="ghost-link"
+                    onClick={() => executeSandboxAction('stop')}
+                    type="button"
                   >
-                    {data.sandbox?.status ?? 'idle'}
-                  </span>
+                    Stop runtime
+                  </button>
                 </div>
-                <div className="panel-body stack">
-                  <div className="list-row">
-                    <div>
-                      <div>Gateway URL</div>
-                      <div className="muted mono">{data.sandbox?.gatewayUrl ?? 'Not running'}</div>
-                    </div>
-                    <div>
-                      <div className="muted">OpenClaw</div>
-                      <div>{data.sandbox?.openClawVersion ?? 'Unknown'}</div>
-                    </div>
+
+                <dl className="data-grid">
+                  <div>
+                    <dt>Gateway URL</dt>
+                    <dd>{data.sandbox?.gatewayUrl ?? 'Not running'}</dd>
                   </div>
-                  <div className="list-row">
-                    <div>
-                      <div>CPU usage</div>
-                      <div className="muted">
-                        {data.sandbox?.activeCpuUsageMs
-                          ? `${data.sandbox.activeCpuUsageMs} ms`
-                          : 'No data'}
-                      </div>
-                    </div>
-                    <div>
-                      <div>Network</div>
-                      <div className="muted">
-                        {data.sandbox?.networkBytes
-                          ? `${Math.round(data.sandbox.networkBytes / 1024)} KB`
-                          : 'No data'}
-                      </div>
-                    </div>
+                  <div>
+                    <dt>OpenClaw</dt>
+                    <dd>{data.sandbox?.openClawVersion ?? 'Unknown version'}</dd>
                   </div>
-                  <div className="footer-row">
-                    <div className="muted">
-                      Updated {data.sandbox ? formatRelativeDate(data.sandbox.updatedAt) : 'Never'}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <button
-                        className="button-ghost"
-                        onClick={() => runSandboxAction('sync')}
-                        type="button"
-                      >
-                        Sync state
-                      </button>
-                      <button
-                        className="button-ghost"
-                        onClick={() => runSandboxAction('stop')}
-                        type="button"
-                      >
-                        Stop
-                      </button>
-                    </div>
+                  <div>
+                    <dt>CPU usage</dt>
+                    <dd>
+                      {typeof data.sandbox?.activeCpuUsageMs === 'number'
+                        ? `${data.sandbox.activeCpuUsageMs} ms`
+                        : 'No CPU sample'}
+                    </dd>
                   </div>
+                  <div>
+                    <dt>Network traffic</dt>
+                    <dd>
+                      {typeof data.sandbox?.networkBytes === 'number'
+                        ? `${Math.round(data.sandbox.networkBytes / 1024)} KB`
+                        : 'No network sample'}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="footer-meta">
+                  <span>
+                    Last sandbox update: {formatRelativeDate(data.sandbox?.updatedAt ?? null)}
+                  </span>
+                  {data.sandbox?.errorMessage ? <span>{data.sandbox.errorMessage}</span> : null}
                 </div>
               </article>
 
-              <article className="panel">
-                <div className="panel-header">
-                  <h2>Latest Usage</h2>
+              <article className="surface-card">
+                <div className="card-heading">
+                  <div>
+                    <p className="eyebrow">Usage</p>
+                    <h2>Recent snapshots</h2>
+                  </div>
                 </div>
-                <div className="panel-body stack">
+
+                <div className="stack-list">
                   {data.usage.length ? (
-                    data.usage.map((snapshot) => (
-                      <div className="list-row" key={`${snapshot.source}-${snapshot.recordedAt}`}>
+                    data.usage.slice(0, 6).map((snapshot) => (
+                      <div className="stack-row" key={`${snapshot.source}-${snapshot.recordedAt}`}>
                         <div>
-                          <div>{snapshot.source}</div>
-                          <div className="muted">{formatRelativeDate(snapshot.recordedAt)}</div>
+                          <strong>{snapshot.source}</strong>
+                          <p>{formatRelativeDate(snapshot.recordedAt)}</p>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div>{snapshot.creditsRemaining ?? snapshot.cpuMs ?? 0}</div>
-                          <div className="muted">
-                            {snapshot.source === 'ai-gateway' ? 'credits left' : 'cpu ms'}
-                          </div>
+                        <div className="stack-row-meta">
+                          <strong>{formatUsageValue(snapshot)}</strong>
+                          <p>{snapshot.source === 'ai-gateway' ? 'credits left' : 'cpu ms'}</p>
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="muted">No usage snapshots yet.</div>
+                    <p className="empty-copy">No snapshots yet.</p>
                   )}
                 </div>
               </article>
@@ -251,277 +332,275 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
           </>
         ) : null}
 
-        {section === 'sessions' ? (
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Sessions</h2>
-            </div>
-            <div className="panel-body stack">
-              {data.sessions.length ? (
-                data.sessions.map((session) => (
-                  <div className="list-row" key={session.sessionKey}>
-                    <div>
-                      <div className="mono">{session.sessionKey}</div>
-                      <div className="muted">Agent {session.agentId}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div>{session.model ?? 'Unknown model'}</div>
-                      <div className="muted">
-                        {session.totalTokens ? `${session.totalTokens} tokens` : 'No token data'}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="muted">No sessions synced from OpenClaw yet.</div>
-              )}
-            </div>
-          </article>
-        ) : null}
-
-        {section === 'calls' ? (
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Command log</h2>
-            </div>
-            <div className="panel-body stack">
-              {data.commands.map((command) => (
-                <div className="list-row" key={command.cmdId}>
-                  <div>
-                    <div className="mono">
-                      {command.command} {command.args.join(' ')}
-                    </div>
-                    <div className="muted">{formatRelativeDate(command.startedAt)}</div>
-                    {command.stdout ? (
-                      <div className="muted mono" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
-                        {command.stdout}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <span className="pill" data-status={command.status}>
-                      {command.status}
-                    </span>
-                    <div className="muted" style={{ marginTop: 8 }}>
-                      exit {command.exitCode ?? '…'}
-                    </div>
-                  </div>
+        {section === 'activity' ? (
+          <section className="content-grid">
+            <article className="surface-card">
+              <div className="card-heading">
+                <div>
+                  <p className="eyebrow">Sessions</p>
+                  <h2>Active and recent agents</h2>
                 </div>
-              ))}
-            </div>
-          </article>
+              </div>
+
+              <div className="stack-list">
+                {data.sessions.length ? (
+                  data.sessions.map((session) => (
+                    <div className="stack-row" key={session.sessionKey}>
+                      <div>
+                        <strong className="mono">{session.sessionKey}</strong>
+                        <p>Agent {session.agentId}</p>
+                      </div>
+                      <div className="stack-row-meta">
+                        <strong>{session.model ?? 'Unknown model'}</strong>
+                        <p>
+                          {typeof session.totalTokens === 'number'
+                            ? `${session.totalTokens} total tokens`
+                            : 'No token metrics'}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="empty-copy">No session data has been synced yet.</p>
+                )}
+              </div>
+            </article>
+
+            <article className="surface-card">
+              <div className="card-heading">
+                <div>
+                  <p className="eyebrow">Command log</p>
+                  <h2>Sandbox output</h2>
+                </div>
+              </div>
+
+              <div className="command-list">
+                {data.commands.length ? (
+                  data.commands.map((command) => (
+                    <article className="command-card" key={command.cmdId}>
+                      <div className="command-header">
+                        <div>
+                          <strong className="mono">
+                            {command.command} {command.args.join(' ')}
+                          </strong>
+                          <p>{formatRelativeDate(command.startedAt)}</p>
+                        </div>
+                        <span className={`status-pill status-${command.status}`}>
+                          {command.status}
+                        </span>
+                      </div>
+
+                      {command.stdout ? (
+                        <pre className="terminal-output">{command.stdout}</pre>
+                      ) : null}
+                      {command.stderr ? (
+                        <pre className="terminal-output terminal-error">{command.stderr}</pre>
+                      ) : null}
+
+                      <div className="footer-meta">
+                        <span>Exit code: {command.exitCode ?? 'running'}</span>
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <p className="empty-copy">No commands have been tracked yet.</p>
+                )}
+              </div>
+            </article>
+          </section>
         ) : null}
 
         {section === 'settings' ? (
-          <article className="panel">
-            <div className="settings-tabs">
-              {(['telegram', 'models', 'security'] as const).map((item) => (
-                <button
-                  data-active={settingsSection === item}
-                  key={item}
-                  onClick={() => setSettingsSection(item)}
-                  type="button"
-                >
-                  {item[0].toUpperCase() + item.slice(1)}
-                </button>
-              ))}
-            </div>
-
-            <div className="panel-body">
-              <div className="form-grid">
-                {settingsSection === 'telegram' ? (
-                  <>
-                    <div className="field">
-                      <label htmlFor="displayName">Gateway name</label>
-                      <input
-                        id="displayName"
-                        onChange={(event) =>
-                          setForm((current) => ({ ...current, displayName: event.target.value }))
-                        }
-                        value={form.displayName}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="telegramBotToken">Telegram bot token</label>
-                      <input
-                        id="telegramBotToken"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            telegramBotToken: event.target.value,
-                          }))
-                        }
-                        value={form.telegramBotToken}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="allowedUserIds">Allowed user IDs</label>
-                      <input
-                        id="allowedUserIds"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            allowedUserIds: event.target.value,
-                          }))
-                        }
-                        value={form.allowedUserIds}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="allowedGroupIds">Allowed group IDs</label>
-                      <input
-                        id="allowedGroupIds"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            allowedGroupIds: event.target.value,
-                          }))
-                        }
-                        value={form.allowedGroupIds}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="timeoutSeconds">Sandbox timeout (seconds)</label>
-                      <input
-                        id="timeoutSeconds"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            timeoutSeconds: Number(event.target.value) || current.timeoutSeconds,
-                          }))
-                        }
-                        type="number"
-                        value={form.timeoutSeconds}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="requireMention">Require mention</label>
-                      <div className="checkbox-row">
-                        <input
-                          checked={form.requireMention}
-                          id="requireMention"
-                          onChange={(event) =>
-                            setForm((current) => ({
-                              ...current,
-                              requireMention: event.target.checked,
-                            }))
-                          }
-                          type="checkbox"
-                        />
-                        <span className="muted">Enforce mention for allowed groups.</span>
-                      </div>
-                    </div>
-                  </>
-                ) : null}
-
-                {settingsSection === 'models' ? (
-                  <>
-                    <div className="field full">
-                      <label htmlFor="defaultModel">Default OpenClaw model</label>
-                      <input
-                        id="defaultModel"
-                        list="available-models"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            defaultModel: event.target.value,
-                          }))
-                        }
-                        value={form.defaultModel}
-                      />
-                      <datalist id="available-models">
-                        {data.availableModels.map((model) => (
-                          <option key={model} value={model} />
-                        ))}
-                      </datalist>
-                    </div>
-                    <div className="field full">
-                      <label htmlFor="aiGatewayApiKey">Vercel AI Gateway API key</label>
-                      <input
-                        id="aiGatewayApiKey"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            aiGatewayApiKey: event.target.value,
-                          }))
-                        }
-                        value={form.aiGatewayApiKey}
-                      />
-                    </div>
-                  </>
-                ) : null}
-
-                {settingsSection === 'security' ? (
-                  <>
-                    <div className="field">
-                      <label htmlFor="vercelApiToken">Vercel API token</label>
-                      <input
-                        id="vercelApiToken"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            vercelApiToken: event.target.value,
-                          }))
-                        }
-                        value={form.vercelApiToken}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="vercelProjectId">Vercel project ID</label>
-                      <input
-                        id="vercelProjectId"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            vercelProjectId: event.target.value,
-                          }))
-                        }
-                        value={form.vercelProjectId}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="vercelTeamId">Vercel team ID</label>
-                      <input
-                        id="vercelTeamId"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            vercelTeamId: event.target.value,
-                          }))
-                        }
-                        value={form.vercelTeamId}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="gatewayAuthToken">Gateway auth token</label>
-                      <input
-                        disabled
-                        id="gatewayAuthToken"
-                        value={data.settings.gatewayAuthToken}
-                      />
-                    </div>
-                  </>
-                ) : null}
+          <section className="settings-layout">
+            <article className="surface-card">
+              <div className="card-heading">
+                <div>
+                  <p className="eyebrow">Access</p>
+                  <h2>Telegram and runtime policy</h2>
+                </div>
               </div>
 
-              <div className="footer-row">
-                <div className="muted">
-                  Saved{' '}
-                  {data.settings.updatedAt ? formatRelativeDate(data.settings.updatedAt) : 'Never'}
+              <div className="form-grid">
+                <label className="field">
+                  <span>Gateway name</span>
+                  <input
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, displayName: event.target.value }))
+                    }
+                    value={draft.displayName}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Telegram bot token</span>
+                  <input
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        telegramBotToken: event.target.value,
+                      }))
+                    }
+                    value={draft.telegramBotToken}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Allowed user IDs</span>
+                  <input
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        allowedUserIds: event.target.value,
+                      }))
+                    }
+                    value={draft.allowedUserIds}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Allowed group IDs</span>
+                  <input
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        allowedGroupIds: event.target.value,
+                      }))
+                    }
+                    value={draft.allowedGroupIds}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Sandbox timeout (seconds)</span>
+                  <input
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        timeoutSeconds: Number(event.target.value) || current.timeoutSeconds,
+                      }))
+                    }
+                    type="number"
+                    value={draft.timeoutSeconds}
+                  />
+                </label>
+
+                <label className="checkbox-field">
+                  <input
+                    checked={draft.requireMention}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        requireMention: event.target.checked,
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>Require mentions in allowlisted groups</span>
+                </label>
+              </div>
+            </article>
+
+            <article className="surface-card">
+              <div className="card-heading">
+                <div>
+                  <p className="eyebrow">Models and credentials</p>
+                  <h2>Gateway configuration</h2>
+                </div>
+              </div>
+
+              <div className="form-grid">
+                <label className="field">
+                  <span>Default model</span>
+                  <input
+                    list="available-models"
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, defaultModel: event.target.value }))
+                    }
+                    value={draft.defaultModel}
+                  />
+                  <datalist id="available-models">
+                    {data.availableModels.map((model) => (
+                      <option key={model} value={model} />
+                    ))}
+                  </datalist>
+                </label>
+
+                <label className="field">
+                  <span>Vercel AI Gateway API key</span>
+                  <input
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        aiGatewayApiKey: event.target.value,
+                      }))
+                    }
+                    value={draft.aiGatewayApiKey}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Vercel API token</span>
+                  <input
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        vercelApiToken: event.target.value,
+                      }))
+                    }
+                    value={draft.vercelApiToken}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Project ID</span>
+                  <input
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        vercelProjectId: event.target.value,
+                      }))
+                    }
+                    value={draft.vercelProjectId}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Team ID</span>
+                  <input
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        vercelTeamId: event.target.value,
+                      }))
+                    }
+                    value={draft.vercelTeamId}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Gateway auth token</span>
+                  <input disabled value={data.settings.gatewayAuthToken} />
+                </label>
+              </div>
+
+              <div className="settings-footer">
+                <div>
+                  <strong>{isDirty ? 'Unsaved changes' : 'Everything saved'}</strong>
+                  <p>Last saved {formatRelativeDate(data.settings.updatedAt)}</p>
                 </div>
                 <button
-                  className="button"
+                  className="primary-button"
                   disabled={isPending}
-                  onClick={() => saveSettings()}
+                  onClick={submitSettings}
                   type="button"
                 >
-                  {isPending ? 'Saving…' : 'Save'}
+                  {isPending ? 'Saving…' : 'Save settings'}
                 </button>
               </div>
-            </div>
-          </article>
+            </article>
+          </section>
         ) : null}
-      </main>
-    </div>
+      </section>
+    </main>
   );
 }

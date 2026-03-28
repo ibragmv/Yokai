@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
-
 import { loadDashboardPayload } from '@/lib/dashboard/data';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
-  const payload = await loadDashboardPayload();
-  return NextResponse.json(payload);
+  return Response.json(await loadDashboardPayload());
 }

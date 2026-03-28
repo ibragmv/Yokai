@@ -2,20 +2,14 @@
   "name": "web",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "biome check src app convex next.config.ts",
-    "typecheck": "tsc --noEmit",
-    "convex:codegen": "convex codegen"
+    "lint": "biome check src next.config.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-mono": "latest",
-    "@fontsource/space-grotesk": "latest",
-    "@ai-sdk/gateway": "^3.0.0",
     "@vercel/sandbox": "^1.8.0",
-    "ai": "^6.0.0",
-    "convex": "^1.22.0",
     "next": "^16.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
