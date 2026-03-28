@@ -67,6 +67,7 @@ Notes:
 
 - `YOKAI_ENCRYPTION_KEY` is mandatory. Without it, Yokai cannot decrypt encrypted dashboard secrets from Convex.
 - `YOKAI_ALLOWED_ORIGINS` controls the allowed origins for Next.js Server Actions.
+- `CRON_SECRET` protects the internal rollover endpoint for external schedulers such as `cron-job.org`.
 - `AI_GATEWAY_API_KEY`, `VERCEL_ACCESS_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID` can be prefilled from env or later managed from the dashboard.
 - `VERCEL_OIDC_TOKEN` is only available from env and is forwarded into the sandbox when present.
 
@@ -127,12 +128,19 @@ bun run convex:migrate:snapshots:dev
 bun run convex:migrate:snapshots:prod
 ```
 
+External scheduler:
+
+```text
+GET /api/internal/sandbox-rollover
+Authorization: Bearer <CRON_SECRET>
+```
+
 ## Dashboard Behavior
 
 - the dashboard auto-refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint
 - `Start sandbox` creates a new Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`
 - when auto-recreate is enabled, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` in Convex `snapshots`, and boots the replacement sandbox from that snapshot
-- `/api/internal/sandbox-rollover` can be hit by an external scheduler if you want automatic rollover without opening the dashboard
+- `/api/internal/sandbox-rollover` is intended to be called by an external scheduler like `cron-job.org`; it requires `Authorization: Bearer <CRON_SECRET>` in production
 - `Sync` fetches OpenClaw session data and appends runtime usage snapshots
 - recent command stdout/stderr is stored in Convex after secret redaction
 
