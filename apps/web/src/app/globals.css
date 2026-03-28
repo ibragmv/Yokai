@@ -133,6 +133,45 @@ input:disabled {
   line-height: 1.6;
 }
 
+.hero-brand,
+.auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.hero-brand {
+  margin-bottom: 1rem;
+}
+
+.auth-brand {
+  margin-bottom: 0.85rem;
+}
+
+.brand-mark {
+  width: 3.25rem;
+  height: 3.25rem;
+  flex: none;
+  filter: drop-shadow(0 14px 24px rgba(15, 23, 42, 0.34));
+}
+
+.brand-copy {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.brand-copy strong {
+  font-size: 1.2rem;
+  letter-spacing: -0.04em;
+}
+
+.brand-copy span {
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 0.88rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .eyebrow {
   margin: 0 0 0.65rem;
   color: var(--accent);

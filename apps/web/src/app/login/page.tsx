@@ -2,6 +2,7 @@ import { fetchQuery } from 'convex/nextjs';
 import { redirect } from 'next/navigation';
 
 import { loginAdminAction, setupAdminAction } from '@/app/login/actions';
+import { YokaiLogo } from '@/components/yokai-logo';
 import { readAdminSession } from '@/lib/auth/session';
 import { api } from '@convex/_generated/api';
 
@@ -29,6 +30,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     <main className="state-screen auth-screen">
       <section className="state-card auth-card">
         <div className="auth-copy">
+          <YokaiLogo className="auth-brand" subtitle="Secure operator access" />
           <p className="eyebrow">{setupMode ? 'Bootstrap access' : 'Admin access'}</p>
           <h1>{setupMode ? 'Create the first admin' : 'Sign in to Yokai'}</h1>
           <p className="state-copy">

@@ -1,33 +1,18 @@
 import 'server-only';
 
-import { createHash } from 'node:crypto';
-
 const DEFAULT_MODELS = [
   'vercel-ai-gateway/google/gemini-3-flash',
   'vercel-ai-gateway/anthropic/claude-sonnet-4.6',
 ] as const;
 
-const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
-const modelCache = new Map<string, { expiresAt: number; models: string[] }>();
-
 function getToken(apiKey?: string) {
   return apiKey || process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
-}
-
-function getCacheKey(token: string) {
-  return createHash('sha256').update(token).digest('hex');
 }
 
 export async function loadAvailableModels(apiKey?: string): Promise<string[]> {
   const token = getToken(apiKey);
   if (!token) {
     return [...DEFAULT_MODELS];
-  }
-
-  const cacheKey = getCacheKey(token);
-  const cached = modelCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.models;
   }
 
   const response = await fetch('https://ai-gateway.vercel.sh/v1/models', {
@@ -49,13 +34,7 @@ export async function loadAvailableModels(apiKey?: string): Promise<string[]> {
     .filter((model): model is string => Boolean(model))
     .slice(0, 50);
 
-  const nextModels = normalizedModels.length ? normalizedModels : [...DEFAULT_MODELS];
-  modelCache.set(cacheKey, {
-    expiresAt: Date.now() + MODEL_CACHE_TTL_MS,
-    models: nextModels,
-  });
-
-  return nextModels;
+  return normalizedModels.length ? normalizedModels : [...DEFAULT_MODELS];
 }
 
 export async function fetchGatewayCredits(apiKey?: string) {

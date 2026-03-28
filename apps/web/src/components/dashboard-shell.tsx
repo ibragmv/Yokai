@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useState, useTransition } from 'react';
 
 import { runSandboxAction, saveSettingsAction } from '@/app/actions';
 import { logoutAdminAction } from '@/app/login/actions';
+import { YokaiLogo } from '@/components/yokai-logo';
 import type {
   DashboardActionResult,
   DashboardPayload,
@@ -172,6 +173,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
       <section className="dashboard-frame">
         <header className="hero-panel">
           <div className="hero-copy">
+            <YokaiLogo className="hero-brand" subtitle="Sandbox operations" />
             <p className="eyebrow">OpenClaw sandbox operations</p>
             <h1>{data.settings.displayName}</h1>
             <p className="hero-text">
