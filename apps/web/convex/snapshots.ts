@@ -42,3 +42,48 @@ export const upsert = mutation({
     return null;
   },
 });
+
+export const migrateLegacyFromState = mutation({
+  args: {
+    stateKey: v.string(),
+    snapshotKey: v.string(),
+  },
+  returns: v.union(snapshotValueValidator, v.null()),
+  handler: async (ctx, args) => {
+    const state = await ctx.db
+      .query('states')
+      .withIndex('by_key', (q) => q.eq('key', args.stateKey))
+      .unique();
+    const legacySnapshot = state?.payload.storedSnapshot ?? null;
+
+    if (!legacySnapshot) {
+      return null;
+    }
+
+    const existingSnapshot = await ctx.db
+      .query('snapshots')
+      .withIndex('by_key', (q) => q.eq('key', args.snapshotKey))
+      .unique();
+
+    if (existingSnapshot) {
+      await ctx.db.patch('snapshots', existingSnapshot._id, legacySnapshot);
+    } else {
+      await ctx.db.insert('snapshots', {
+        key: args.snapshotKey,
+        ...legacySnapshot,
+      });
+    }
+
+    if (state) {
+      await ctx.db.patch('states', state._id, {
+        payload: {
+          ...state.payload,
+          storedSnapshot: undefined,
+        },
+        updatedAt: Date.now(),
+      });
+    }
+
+    return legacySnapshot;
+  },
+});

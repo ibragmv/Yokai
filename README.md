@@ -69,7 +69,6 @@ Notes:
 - `YOKAI_ALLOWED_ORIGINS` controls the allowed origins for Next.js Server Actions.
 - `AI_GATEWAY_API_KEY`, `VERCEL_ACCESS_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID` can be prefilled from env or later managed from the dashboard.
 - `VERCEL_OIDC_TOKEN` is only available from env and is forwarded into the sandbox when present.
-- `CRON_SECRET` secures the internal rollover endpoint used by Vercel Cron.
 
 ## Local Development
 
@@ -83,6 +82,13 @@ Sync the Convex schema and functions to your development deployment:
 
 ```bash
 bun run convex:sync:dev
+```
+
+Deploy Convex explicitly to dev or prod using the targets stored in `apps/web/.env`:
+
+```bash
+bun run convex:deploy:dev
+bun run convex:deploy:prod
 ```
 
 Start the web app:
@@ -113,9 +119,12 @@ Convex workflows:
 ```bash
 bun run convex:dev
 bun run convex:sync:dev
-bun run convex:deploy
+bun run convex:deploy:dev
+bun run convex:deploy:prod
 bun run convex:logs:dev
 bun run convex:logs:prod
+bun run convex:migrate:snapshots:dev
+bun run convex:migrate:snapshots:prod
 ```
 
 ## Dashboard Behavior
@@ -123,7 +132,7 @@ bun run convex:logs:prod
 - the dashboard auto-refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint
 - `Start sandbox` creates a new Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`
 - when auto-recreate is enabled, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` in Convex `snapshots`, and boots the replacement sandbox from that snapshot
-- Vercel Cron hits `/api/internal/sandbox-rollover` every minute so rollover can happen without opening the dashboard
+- `/api/internal/sandbox-rollover` can be hit by an external scheduler if you want automatic rollover without opening the dashboard
 - `Sync` fetches OpenClaw session data and appends runtime usage snapshots
 - recent command stdout/stderr is stored in Convex after secret redaction
 
