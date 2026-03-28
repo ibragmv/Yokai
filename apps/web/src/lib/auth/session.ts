@@ -75,10 +75,17 @@ export async function readAdminSession(): Promise<AdminSession | null> {
     return null;
   }
 
-  const session = await fetchMutation(api.auth.validateSession, {
-    sessionId: sessionCookie.sessionId,
-    sessionToken: sessionCookie.sessionToken,
-  });
+  let session: Awaited<ReturnType<typeof fetchMutation<typeof api.auth.validateSession>>> | null =
+    null;
+
+  try {
+    session = await fetchMutation(api.auth.validateSession, {
+      sessionId: sessionCookie.sessionId,
+      sessionToken: sessionCookie.sessionToken,
+    });
+  } catch {
+    return null;
+  }
 
   if (!session) {
     return null;
