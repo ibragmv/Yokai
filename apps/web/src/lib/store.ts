@@ -210,19 +210,7 @@ export async function readDashboardState(): Promise<DashboardState> {
   }
 
   try {
-    const state = await deserializeState(record.payload);
-    const serialized = await serializeState(state);
-    const currentPayload = JSON.stringify(record.payload);
-    const nextPayload = JSON.stringify(serialized);
-
-    if (currentPayload !== nextPayload) {
-      await fetchMutation(api.dashboard.upsertState, {
-        key: STATE_KEY,
-        payload: serialized,
-      });
-    }
-
-    return state;
+    return await deserializeState(record.payload);
   } catch (error) {
     if (!isEncryptionAuthError(error)) {
       throw error;

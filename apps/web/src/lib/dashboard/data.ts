@@ -23,7 +23,7 @@ function sanitizeSettings(settings: DashboardSettings): DashboardPublicSettings 
 }
 
 export async function loadDashboardPayload(): Promise<DashboardPayload> {
-  await reconcileOpenClawSandboxLifecycle();
+  await reconcileOpenClawSandboxLifecycle().catch(() => {});
   const state = await readDashboardState();
   const availableModels = await loadAvailableModels(state.settings.aiGatewayApiKey || undefined)
     .catch(() => [])
