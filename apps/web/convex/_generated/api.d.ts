@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as dashboard from "../dashboard.js";
+import type * as snapshots from "../snapshots.js";
 import type * as validators from "../validators.js";
 
 import type {
@@ -21,6 +22,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   dashboard: typeof dashboard;
+  snapshots: typeof snapshots;
   validators: typeof validators;
 }>;
 

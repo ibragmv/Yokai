@@ -19,7 +19,6 @@ import { api } from '@convex/_generated/api';
 export type DashboardState = {
   settings: DashboardSettings;
   sandbox: SandboxRecord | null;
-  storedSnapshot: StoredSnapshotRecord | null;
   sessions: SessionRecord[];
   commands: CommandRecord[];
   usage: UsageSnapshot[];
@@ -50,7 +49,6 @@ type PersistedDashboardState = {
   settings: Omit<DashboardSettings, SecretSettingKey>;
   encryptedSettings: Record<SecretSettingKey, EncryptedField>;
   sandbox: SandboxRecord | null;
-  storedSnapshot: StoredSnapshotRecord | null;
   sessions: SessionRecord[];
   commands: CommandRecord[];
   usage: UsageSnapshot[];
@@ -58,7 +56,7 @@ type PersistedDashboardState = {
 
 type LegacyPersistedDashboardState = Omit<
   PersistedDashboardState,
-  'settings' | 'encryptedSettings' | 'sandbox' | 'storedSnapshot'
+  'settings' | 'encryptedSettings' | 'sandbox'
 > & {
   settings: LegacySettings;
   encryptedSettings?: Partial<Record<SecretSettingKey, EncryptedField>>;
@@ -104,7 +102,6 @@ function createDefaultState(): DashboardState {
       updatedAt: null,
     },
     sandbox: null,
-    storedSnapshot: null,
     sessions: [],
     commands: [],
     usage: [],
@@ -148,7 +145,6 @@ async function serializeState(state: DashboardState): Promise<PersistedDashboard
     settings: plainSettings,
     encryptedSettings,
     sandbox: state.sandbox,
-    storedSnapshot: state.storedSnapshot,
     sessions: state.sessions,
     commands: state.commands,
     usage: state.usage,
@@ -187,7 +183,6 @@ async function deserializeState(payload: LegacyPersistedDashboardState): Promise
           lastSnapshotAt: payload.sandbox.lastSnapshotAt ?? null,
         }
       : null,
-    storedSnapshot: payload.storedSnapshot ?? null,
     sessions: payload.sessions,
     commands: payload.commands,
     usage: payload.usage,
@@ -212,7 +207,6 @@ function normalizeState(input: Partial<DashboardState> | null | undefined): Dash
           lastSnapshotAt: input.sandbox.lastSnapshotAt ?? null,
         }
       : fallback.sandbox,
-    storedSnapshot: input?.storedSnapshot ?? fallback.storedSnapshot,
     sessions: Array.isArray(input?.sessions) ? input.sessions : fallback.sessions,
     commands: Array.isArray(input?.commands) ? input.commands : fallback.commands,
     usage: Array.isArray(input?.usage) ? input.usage : fallback.usage,

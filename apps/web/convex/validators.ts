@@ -26,16 +26,26 @@ export const encryptedSettingsValidator = v.object({
   gatewayAuthToken: encryptedFieldValidator,
 });
 
-export const storedSnapshotValidator = v.union(
-  v.object({
-    snapshotId: v.string(),
-    sourceSandboxId: v.string(),
-    createdAt: v.number(),
-    expiresAt: v.union(v.number(), v.null()),
-    updatedAt: v.number(),
-  }),
-  v.null(),
-);
+export const snapshotValueValidator = v.object({
+  snapshotId: v.string(),
+  sourceSandboxId: v.string(),
+  createdAt: v.number(),
+  expiresAt: v.union(v.number(), v.null()),
+  updatedAt: v.number(),
+});
+
+export const storedSnapshotValidator = v.union(snapshotValueValidator, v.null());
+
+export const snapshotRecordValidator = v.object({
+  _id: v.id('snapshots'),
+  _creationTime: v.number(),
+  key: v.string(),
+  snapshotId: v.string(),
+  sourceSandboxId: v.string(),
+  createdAt: v.number(),
+  expiresAt: v.union(v.number(), v.null()),
+  updatedAt: v.number(),
+});
 
 export const sandboxValidator = v.union(
   v.object({
@@ -98,6 +108,8 @@ export const dashboardStatePayloadValidator = v.object({
   settings: settingsValidator,
   encryptedSettings: encryptedSettingsValidator,
   sandbox: sandboxValidator,
+  // Legacy compatibility for older `states` rows before snapshot data moved
+  // into the dedicated `snapshots` table.
   storedSnapshot: v.optional(storedSnapshotValidator),
   sessions: v.array(sessionRecordValidator),
   commands: v.array(commandRecordValidator),

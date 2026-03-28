@@ -1,6 +1,6 @@
 # Yokai
 
-Yokai is a private control room for running OpenClaw inside Vercel Sandbox. The UI is built with Next.js App Router, while Convex stores admin credentials, dashboard state, session data, command history, and usage snapshots.
+Yokai is a private control room for running OpenClaw inside Vercel Sandbox. The UI is built with Next.js App Router, while Convex stores admin credentials, dashboard state, session data, command history, usage snapshots, and snapshot metadata.
 
 ## What It Does
 
@@ -69,6 +69,7 @@ Notes:
 - `YOKAI_ALLOWED_ORIGINS` controls the allowed origins for Next.js Server Actions.
 - `AI_GATEWAY_API_KEY`, `VERCEL_ACCESS_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID` can be prefilled from env or later managed from the dashboard.
 - `VERCEL_OIDC_TOKEN` is only available from env and is forwarded into the sandbox when present.
+- `CRON_SECRET` secures the internal rollover endpoint used by Vercel Cron.
 
 ## Local Development
 
@@ -121,7 +122,8 @@ bun run convex:logs:prod
 
 - the dashboard auto-refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint
 - `Start sandbox` creates a new Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`
-- when auto-recreate is enabled, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` in Convex state, and boots the replacement sandbox from that snapshot
+- when auto-recreate is enabled, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` in Convex `snapshots`, and boots the replacement sandbox from that snapshot
+- Vercel Cron hits `/api/internal/sandbox-rollover` every minute so rollover can happen without opening the dashboard
 - `Sync` fetches OpenClaw session data and appends runtime usage snapshots
 - recent command stdout/stderr is stored in Convex after secret redaction
 
@@ -129,7 +131,8 @@ bun run convex:logs:prod
 
 Convex stores three main data areas:
 
-- `states`: the persisted dashboard payload, including sandbox status, latest stored snapshot metadata, settings, sessions, commands, and usage snapshots
+- `states`: the persisted dashboard payload, including sandbox status, settings, sessions, commands, and usage snapshots
+- `snapshots`: the latest persisted sandbox snapshot metadata used to restore memory across sandbox recreation
 - `credentials`: admin login and password hash metadata
 - `sessions`: active admin sessions used for cookie validation
 

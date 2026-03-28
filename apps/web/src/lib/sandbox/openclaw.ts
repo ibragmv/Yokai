@@ -7,7 +7,7 @@ import {
   deleteRemoteSnapshot,
   loadStoredSnapshot,
   saveStoredSnapshot,
-} from '@/lib/persistence/openclaw-snapshots';
+} from '@/lib/persistence/snapshots';
 import { redactSecrets } from '@/lib/security/redaction';
 import { appendCommand, readDashboardState, updateDashboardState } from '@/lib/store';
 import type { CommandRecord, DashboardSettings, SandboxRecord, SessionRecord } from '@/lib/types';
@@ -17,7 +17,19 @@ const OPENCLAW_ROOT = '/vercel/sandbox/openclaw';
 const DEFAULT_RUNTIME = 'node24';
 const SNAPSHOT_EXPIRATION_MS = 0;
 
-let lifecycleReconcile: Promise<void> | null = null;
+export type LifecycleReconcileResult = {
+  status: 'skipped' | 'recreated';
+  reason:
+    | 'sandbox-missing'
+    | 'sandbox-not-running'
+    | 'auto-recreate-disabled'
+    | 'rollover-not-due'
+    | 'rollover-complete';
+  sandboxId: string | null;
+  previousSandboxId: string | null;
+};
+
+let lifecycleReconcile: Promise<LifecycleReconcileResult> | null = null;
 
 function getSandboxTimeoutMs(settings: DashboardSettings) {
   return Math.max(settings.timeoutSeconds, 60) * 1000;
@@ -291,10 +303,7 @@ export async function syncOpenClawSessions(
   };
 }
 
-export async function snapshotOpenClawSandbox(
-  sandboxId: string,
-  _settings: DashboardSettings,
-): Promise<CommandRecord | null> {
+export async function snapshotOpenClawSandbox(sandboxId: string): Promise<CommandRecord> {
   const previousSnapshot = await loadStoredSnapshot();
   const sandbox = await Sandbox.get({ sandboxId });
   const startedAt = Date.now();
@@ -320,32 +329,56 @@ export async function stopOpenClawSandbox(sandboxId: string) {
 
 export async function reconcileOpenClawSandboxLifecycle() {
   if (lifecycleReconcile) {
-    await lifecycleReconcile;
-    return;
+    return await lifecycleReconcile;
   }
 
   lifecycleReconcile = (async () => {
     try {
       const state = await readDashboardState();
-      if (
-        !state.sandbox ||
-        state.sandbox.status !== 'running' ||
-        !state.settings.autoRecreateSandbox
-      ) {
-        return;
+      if (!state.sandbox) {
+        return {
+          status: 'skipped',
+          reason: 'sandbox-missing',
+          sandboxId: null,
+          previousSandboxId: null,
+        } satisfies LifecycleReconcileResult;
+      }
+
+      if (state.sandbox.status !== 'running') {
+        return {
+          status: 'skipped',
+          reason: 'sandbox-not-running',
+          sandboxId: state.sandbox.sandboxId,
+          previousSandboxId: state.sandbox.sandboxId,
+        } satisfies LifecycleReconcileResult;
+      }
+
+      if (!state.settings.autoRecreateSandbox) {
+        return {
+          status: 'skipped',
+          reason: 'auto-recreate-disabled',
+          sandboxId: state.sandbox.sandboxId,
+          previousSandboxId: state.sandbox.sandboxId,
+        } satisfies LifecycleReconcileResult;
       }
 
       const timeoutMs = getSandboxTimeoutMs(state.settings);
       const rolloverAt = state.sandbox.startedAt + timeoutMs - getRolloverWindowMs(timeoutMs);
       if (Date.now() < rolloverAt) {
-        return;
+        return {
+          status: 'skipped',
+          reason: 'rollover-not-due',
+          sandboxId: state.sandbox.sandboxId,
+          previousSandboxId: state.sandbox.sandboxId,
+        } satisfies LifecycleReconcileResult;
       }
 
+      const previousSandboxId = state.sandbox.sandboxId;
       const previousSnapshot = await loadStoredSnapshot();
       let snapshotCommand: CommandRecord | null = null;
 
       try {
-        snapshotCommand = await snapshotOpenClawSandbox(state.sandbox.sandboxId, state.settings);
+        snapshotCommand = await snapshotOpenClawSandbox(previousSandboxId);
       } catch {}
 
       const { sandboxRecord, commands } = await createOpenClawSandbox(state.settings);
@@ -364,9 +397,20 @@ export async function reconcileOpenClawSandboxLifecycle() {
         ),
       }));
 
+      if (sandboxRecord.sandboxId !== previousSandboxId) {
+        await stopOpenClawSandbox(previousSandboxId).catch(() => {});
+      }
+
       if (previousSnapshot && previousSnapshot.snapshotId !== sandboxRecord.sourceSnapshotId) {
         await deleteRemoteSnapshot(previousSnapshot.snapshotId);
       }
+
+      return {
+        status: 'recreated',
+        reason: 'rollover-complete',
+        sandboxId: sandboxRecord.sandboxId,
+        previousSandboxId,
+      } satisfies LifecycleReconcileResult;
     } catch (error) {
       const state = await readDashboardState();
       await updateDashboardState((current) => ({
@@ -384,10 +428,11 @@ export async function reconcileOpenClawSandboxLifecycle() {
             }
           : null,
       }));
+      throw error;
     }
   })().finally(() => {
     lifecycleReconcile = null;
   });
 
-  await lifecycleReconcile;
+  return await lifecycleReconcile;
 }

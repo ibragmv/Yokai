@@ -122,24 +122,20 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
     }
 
     if (action === 'stop' && state.sandbox) {
-      const snapshotCommand = await snapshotOpenClawSandbox(
-        state.sandbox.sandboxId,
-        state.settings,
-      );
-      if (!snapshotCommand) {
-        await stopOpenClawSandbox(state.sandbox.sandboxId);
-      }
+      const snapshotCommand = await snapshotOpenClawSandbox(state.sandbox.sandboxId);
+      await stopOpenClawSandbox(state.sandbox.sandboxId);
       await updateDashboardState((current) => ({
         ...current,
-        commands: snapshotCommand
-          ? appendCommand(current.commands, snapshotCommand)
-          : current.commands,
+        commands: appendCommand(current.commands, snapshotCommand),
         sandbox: current.sandbox
           ? {
               ...current.sandbox,
               status: 'stopped',
+              previewUrl: null,
+              gatewayUrl: null,
               errorMessage: null,
-              lastSnapshotAt: snapshotCommand?.finishedAt ?? current.sandbox.lastSnapshotAt,
+              expiresAt: null,
+              lastSnapshotAt: snapshotCommand.finishedAt ?? current.sandbox.lastSnapshotAt,
               updatedAt: Date.now(),
             }
           : null,

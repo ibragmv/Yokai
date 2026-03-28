@@ -9,6 +9,16 @@ export default defineSchema({
     payload: dashboardStatePayloadValidator,
     updatedAt: v.number(),
   }).index('by_key', ['key']),
+  snapshots: defineTable({
+    key: v.string(),
+    snapshotId: v.string(),
+    sourceSandboxId: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.union(v.number(), v.null()),
+    updatedAt: v.number(),
+  })
+    .index('by_key', ['key'])
+    .index('by_snapshot_id', ['snapshotId']),
   credentials: defineTable({
     key: v.string(),
     login: v.string(),
