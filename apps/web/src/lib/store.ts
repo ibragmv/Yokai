@@ -47,9 +47,26 @@ type PersistedDashboardState = {
   usage: UsageSnapshot[];
 };
 
+type LegacyPersistedDashboardState = Omit<PersistedDashboardState, 'encryptedSettings'> & {
+  encryptedSettings?: Partial<Record<SecretSettingKey, EncryptedField>>;
+};
+
 function isEncryptionAuthError(error: unknown) {
   return (
     error instanceof Error && error.message === 'Unsupported state or unable to authenticate data'
+  );
+}
+
+function isEncryptedField(value: unknown): value is EncryptedField {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'iv' in value &&
+      typeof value.iv === 'string' &&
+      'tag' in value &&
+      typeof value.tag === 'string' &&
+      'value' in value &&
+      typeof value.value === 'string',
   );
 }
 
@@ -123,11 +140,17 @@ async function serializeState(state: DashboardState): Promise<PersistedDashboard
   };
 }
 
-async function deserializeState(payload: PersistedDashboardState): Promise<DashboardState> {
+async function deserializeState(payload: LegacyPersistedDashboardState): Promise<DashboardState> {
+  const fallback = createDefaultState();
   const decryptedEntries = await Promise.all(
-    SECRET_SETTING_KEYS.map(
-      async (key) => [key, await decryptValue(payload.encryptedSettings[key])] as const,
-    ),
+    SECRET_SETTING_KEYS.map(async (key) => {
+      const encryptedValue = payload.encryptedSettings?.[key];
+      if (!isEncryptedField(encryptedValue)) {
+        return [key, fallback.settings[key]] as const;
+      }
+
+      return [key, await decryptValue(encryptedValue)] as const;
+    }),
   );
   const decryptedSettings = Object.fromEntries(decryptedEntries) as Record<
     SecretSettingKey,
@@ -156,7 +179,14 @@ function normalizeState(input: Partial<DashboardState> | null | undefined): Dash
       gatewayAuthToken: input?.settings?.gatewayAuthToken || fallback.settings.gatewayAuthToken,
       updatedAt: input?.settings?.updatedAt ?? fallback.settings.updatedAt,
     },
-    sandbox: input?.sandbox ?? fallback.sandbox,
+    sandbox: input?.sandbox
+      ? {
+          ...input.sandbox,
+          sourceSnapshotId: input.sandbox.sourceSnapshotId ?? null,
+          expiresAt: input.sandbox.expiresAt ?? null,
+          lastSnapshotAt: input.sandbox.lastSnapshotAt ?? null,
+        }
+      : fallback.sandbox,
     sessions: Array.isArray(input?.sessions) ? input.sessions : fallback.sessions,
     commands: Array.isArray(input?.commands) ? input.commands : fallback.commands,
     usage: Array.isArray(input?.usage) ? input.usage : fallback.usage,
@@ -180,7 +210,19 @@ export async function readDashboardState(): Promise<DashboardState> {
   }
 
   try {
-    return await deserializeState(record.payload);
+    const state = await deserializeState(record.payload);
+    const serialized = await serializeState(state);
+    const currentPayload = JSON.stringify(record.payload);
+    const nextPayload = JSON.stringify(serialized);
+
+    if (currentPayload !== nextPayload) {
+      await fetchMutation(api.dashboard.upsertState, {
+        key: STATE_KEY,
+        payload: serialized,
+      });
+    }
+
+    return state;
   } catch (error) {
     if (!isEncryptionAuthError(error)) {
       throw error;
