@@ -76,6 +76,12 @@ export async function saveStoredSnapshot(snapshot: Snapshot): Promise<StoredSnap
   return nextSnapshot;
 }
 
+export async function clearStoredSnapshot() {
+  await fetchMutation(api.snapshots.clear, {
+    key: SNAPSHOT_KEY,
+  });
+}
+
 export async function deleteRemoteSnapshot(snapshotId: string | null | undefined) {
   if (!snapshotId) {
     return;

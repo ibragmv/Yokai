@@ -5,6 +5,7 @@ import { reconcileOpenClawSandboxLifecycle } from '@/lib/sandbox/openclaw';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 function isAuthorized(request: NextRequest) {
   if (process.env.NODE_ENV !== 'production' && !process.env.CRON_SECRET) {

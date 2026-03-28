@@ -43,6 +43,26 @@ export const upsert = mutation({
   },
 });
 
+export const clear = mutation({
+  args: {
+    key: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query('snapshots')
+      .withIndex('by_key', (q) => q.eq('key', args.key))
+      .unique();
+
+    if (!existing) {
+      return null;
+    }
+
+    await ctx.db.delete(existing._id);
+    return null;
+  },
+});
+
 export const migrateLegacyFromState = mutation({
   args: {
     stateKey: v.string(),

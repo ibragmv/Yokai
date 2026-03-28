@@ -4,6 +4,7 @@ import { Sandbox } from '@vercel/sandbox';
 
 import { buildOpenClawConfig, sandboxEnvironment } from '@/lib/openclaw/config';
 import {
+  clearStoredSnapshot,
   deleteRemoteSnapshot,
   loadStoredSnapshot,
   saveStoredSnapshot,
@@ -25,6 +26,7 @@ const DEFAULT_RUNTIME = 'node24';
 const GATEWAY_READY_TIMEOUT_MS = 20_000;
 const GATEWAY_READY_POLL_MS = 1_000;
 const SNAPSHOT_EXPIRATION_MS = 0;
+const SESSION_SYNC_TIMEOUT_SECONDS = 20;
 
 export type LifecycleReconcileResult = {
   status: 'skipped' | 'recreated';
@@ -38,6 +40,12 @@ export type LifecycleReconcileResult = {
     | 'recovery-clean-start';
   sandboxId: string | null;
   previousSandboxId: string | null;
+};
+
+type BootSandboxResult = {
+  sandbox: Sandbox;
+  sandboxRecord: SandboxRecord;
+  commands: CommandRecord[];
 };
 
 let lifecycleReconcile: Promise<LifecycleReconcileResult> | null = null;
@@ -137,6 +145,27 @@ function createSandboxRecord(
   };
 }
 
+async function primeOpenClawWorkspace(sandbox: Sandbox, settings: DashboardSettings) {
+  await sandbox.runCommand({
+    cmd: 'bash',
+    args: [
+      '-lc',
+      [
+        `mkdir -p "${OPENCLAW_ROOT}" "${OPENCLAW_ROOT}/state" "${OPENCLAW_ROOT}/workspace"`,
+        `rm -f "${GATEWAY_LOG_PATH}"`,
+        `find "${OPENCLAW_ROOT}/state" -maxdepth 1 \\( -name "*.pid" -o -name "*.lock" -o -name "*.sock" \\) -delete 2>/dev/null || true`,
+      ].join('\n'),
+    ],
+  });
+
+  await sandbox.writeFiles([
+    {
+      path: `${OPENCLAW_ROOT}/openclaw.json`,
+      content: Buffer.from(buildOpenClawConfig(settings)),
+    },
+  ]);
+}
+
 async function probeGatewayStatus(sandbox: Sandbox) {
   const result = await sandbox.runCommand({
     cmd: 'node',
@@ -196,6 +225,162 @@ async function waitForGatewayReady(
   return await readGatewayDiagnostics(sandbox, settings);
 }
 
+async function createSandboxInstance(
+  settings: DashboardSettings,
+  restoredSnapshot: StoredSnapshotRecord | null,
+) {
+  const timeout = getSandboxTimeoutMs(settings);
+
+  if (restoredSnapshot) {
+    return await Sandbox.create({
+      source: {
+        type: 'snapshot',
+        snapshotId: restoredSnapshot.snapshotId,
+      },
+      ports: [18789],
+      timeout,
+      env: sandboxEnvironment(settings),
+    });
+  }
+
+  return await Sandbox.create({
+    runtime: DEFAULT_RUNTIME,
+    ports: [18789],
+    timeout,
+    env: sandboxEnvironment(settings),
+  });
+}
+
+async function bootOpenClawSandbox(
+  settings: DashboardSettings,
+  restoredSnapshot: StoredSnapshotRecord | null,
+  inheritedCommands: CommandRecord[] = [],
+): Promise<BootSandboxResult> {
+  const sandbox = await createSandboxInstance(settings, restoredSnapshot);
+  try {
+    await primeOpenClawWorkspace(sandbox, settings);
+
+    const commands = [...inheritedCommands];
+
+    if (restoredSnapshot) {
+      commands.push(
+        createSystemCommand(
+          sandbox.sandboxId,
+          'system:restore-snapshot',
+          `Restored sandbox from snapshot ${restoredSnapshot.snapshotId}.`,
+        ),
+      );
+    } else {
+      const installResult = await runTrackedCommand(sandbox, {
+        cmd: 'bash',
+        args: [
+          '-lc',
+          [
+            'export SHARP_IGNORE_GLOBAL_LIBVIPS=1',
+            'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-prompt --no-onboard',
+          ].join(' && '),
+        ],
+        settings,
+      });
+
+      commands.push(installResult);
+
+      if (installResult.status === 'failed') {
+        return {
+          sandbox,
+          sandboxRecord: createSandboxRecord(sandbox, {
+            status: 'error',
+            sourceSnapshotId: null,
+            openClawVersion: null,
+            errorMessage:
+              installResult.stderr || installResult.stdout || 'OpenClaw installation failed.',
+            lastSnapshotAt: null,
+          }),
+          commands,
+        };
+      }
+    }
+
+    const gatewayCommand = await runTrackedCommand(sandbox, {
+      cmd: 'bash',
+      args: [
+        '-lc',
+        [
+          `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
+          `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
+          `openclaw gateway > "${GATEWAY_LOG_PATH}" 2>&1`,
+        ].join(' && '),
+      ],
+      detached: true,
+      settings,
+    });
+    commands.push(gatewayCommand);
+
+    const gatewayDiagnostics = await waitForGatewayReady(sandbox, settings);
+    if (gatewayDiagnostics) {
+      commands.push(gatewayDiagnostics);
+
+      return {
+        sandbox,
+        sandboxRecord: createSandboxRecord(sandbox, {
+          status: 'error',
+          sourceSnapshotId: sandbox.sourceSnapshotId ?? restoredSnapshot?.snapshotId ?? null,
+          openClawVersion: null,
+          errorMessage:
+            gatewayDiagnostics.stderr ||
+            gatewayDiagnostics.stdout ||
+            'OpenClaw gateway did not become ready before timeout.',
+          lastSnapshotAt: restoredSnapshot?.updatedAt ?? null,
+        }),
+        commands,
+      };
+    }
+
+    const version = await sandbox.runCommand('bash', ['-lc', 'openclaw --version']);
+    const startedAt = Date.now();
+
+    return {
+      sandbox,
+      sandboxRecord: {
+        ...createSandboxRecord(sandbox, {
+          status: 'running',
+          sourceSnapshotId: sandbox.sourceSnapshotId ?? restoredSnapshot?.snapshotId ?? null,
+          openClawVersion: (await version.stdout()).trim() || null,
+          errorMessage: null,
+          lastSnapshotAt: restoredSnapshot?.updatedAt ?? null,
+          startedAt,
+        }),
+        expiresAt: getExpiresAt(startedAt, settings),
+        updatedAt: startedAt,
+      },
+      commands,
+    };
+  } catch (error) {
+    await stopOpenClawSandbox(sandbox.sandboxId).catch(() => {});
+    throw error;
+  }
+}
+
+async function discardStoredSnapshot(
+  snapshot: StoredSnapshotRecord | null,
+  settings: DashboardSettings,
+  message: string,
+) {
+  if (!snapshot) {
+    return [] satisfies CommandRecord[];
+  }
+
+  await Promise.allSettled([clearStoredSnapshot(), deleteRemoteSnapshot(snapshot.snapshotId)]);
+
+  return [
+    createSystemCommand(
+      snapshot.sourceSandboxId || snapshot.snapshotId,
+      'system:discard-snapshot',
+      redactSecrets(message, settings) ?? 'Stored snapshot was discarded.',
+    ),
+  ] satisfies CommandRecord[];
+}
+
 export async function isOpenClawSandboxRunning(sandboxId: string) {
   try {
     const sandbox = await Sandbox.get({ sandboxId });
@@ -213,158 +398,59 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
   sandboxRecord: SandboxRecord;
   commands: CommandRecord[];
 }> {
-  const storedSnapshot = getRestorableSnapshot(await loadStoredSnapshot());
-  const timeout = getSandboxTimeoutMs(settings);
-  let sandbox: Sandbox;
-  let restoredSnapshot = storedSnapshot;
-  let snapshotFallbackMessage: string | null = null;
+  const snapshotRecord = await loadStoredSnapshot();
+  const storedSnapshot = getRestorableSnapshot(snapshotRecord);
 
-  if (storedSnapshot) {
-    try {
-      sandbox = await Sandbox.create({
-        source: {
-          type: 'snapshot',
-          snapshotId: storedSnapshot.snapshotId,
-        },
-        ports: [18789],
-        timeout,
-        env: sandboxEnvironment(settings),
-      });
-    } catch (error) {
-      restoredSnapshot = null;
-      snapshotFallbackMessage =
-        redactSecrets(
-          `Stored snapshot ${storedSnapshot.snapshotId} could not be restored. Falling back to a clean sandbox. ${error instanceof Error ? error.message : 'Unknown restore error.'}`,
-          settings,
-        ) ?? 'Stored snapshot could not be restored.';
-      sandbox = await Sandbox.create({
-        runtime: DEFAULT_RUNTIME,
-        ports: [18789],
-        timeout,
-        env: sandboxEnvironment(settings),
-      });
-    }
-  } else {
-    sandbox = await Sandbox.create({
-      runtime: DEFAULT_RUNTIME,
-      ports: [18789],
-      timeout,
-      env: sandboxEnvironment(settings),
-    });
+  if (snapshotRecord && !storedSnapshot) {
+    await clearStoredSnapshot().catch(() => {});
   }
 
-  await sandbox.mkDir(OPENCLAW_ROOT);
-  await sandbox.mkDir(`${OPENCLAW_ROOT}/state`);
-  await sandbox.mkDir(`${OPENCLAW_ROOT}/workspace`);
-  await sandbox.writeFiles([
-    {
-      path: `${OPENCLAW_ROOT}/openclaw.json`,
-      content: Buffer.from(buildOpenClawConfig(settings)),
-    },
-  ]);
-
-  const commands: CommandRecord[] = [];
-
-  if (snapshotFallbackMessage) {
-    commands.push(
-      createSystemCommand(
-        sandbox.sandboxId,
-        'system:restore-snapshot-fallback',
-        snapshotFallbackMessage,
-      ),
-    );
-  }
-
-  if (!restoredSnapshot) {
-    const installResult = await runTrackedCommand(sandbox, {
-      cmd: 'bash',
-      args: [
-        '-lc',
-        [
-          'export SHARP_IGNORE_GLOBAL_LIBVIPS=1',
-          'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-prompt --no-onboard',
-        ].join(' && '),
-      ],
-      settings,
-    });
-
-    commands.push(installResult);
-
-    if (installResult.status === 'failed') {
-      return {
-        sandboxRecord: createSandboxRecord(sandbox, {
-          status: 'error',
-          sourceSnapshotId: null,
-          openClawVersion: null,
-          errorMessage:
-            installResult.stderr || installResult.stdout || 'OpenClaw installation failed.',
-          lastSnapshotAt: storedSnapshot?.updatedAt ?? null,
-        }),
-        commands,
-      };
-    }
-  } else {
-    commands.push(
-      createSystemCommand(
-        sandbox.sandboxId,
-        'system:restore-snapshot',
-        `Restored sandbox from snapshot ${restoredSnapshot.snapshotId}.`,
-      ),
-    );
-  }
-
-  const gatewayCommand = await runTrackedCommand(sandbox, {
-    cmd: 'bash',
-    args: [
-      '-lc',
-      [
-        `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
-        `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
-        `openclaw gateway > "${GATEWAY_LOG_PATH}" 2>&1`,
-      ].join(' && '),
-    ],
-    detached: true,
-    settings,
-  });
-  commands.push(gatewayCommand);
-
-  const gatewayDiagnostics = await waitForGatewayReady(sandbox, settings);
-  if (gatewayDiagnostics) {
-    commands.push(gatewayDiagnostics);
-
+  if (!storedSnapshot) {
+    const cleanBoot = await bootOpenClawSandbox(settings, null);
     return {
-      sandboxRecord: createSandboxRecord(sandbox, {
-        status: 'error',
-        sourceSnapshotId: sandbox.sourceSnapshotId ?? restoredSnapshot?.snapshotId ?? null,
-        openClawVersion: null,
-        errorMessage:
-          gatewayDiagnostics.stderr ||
-          gatewayDiagnostics.stdout ||
-          'OpenClaw gateway did not become ready before timeout.',
-        lastSnapshotAt: restoredSnapshot?.updatedAt ?? null,
-      }),
-      commands,
+      sandboxRecord: cleanBoot.sandboxRecord,
+      commands: cleanBoot.commands,
     };
   }
 
-  const version = await sandbox.runCommand('bash', ['-lc', 'openclaw --version']);
-  const startedAt = Date.now();
+  try {
+    const restoredBoot = await bootOpenClawSandbox(settings, storedSnapshot);
 
-  return {
-    sandboxRecord: {
-      ...createSandboxRecord(sandbox, {
-        status: 'running',
-        sourceSnapshotId: sandbox.sourceSnapshotId ?? restoredSnapshot?.snapshotId ?? null,
-        openClawVersion: (await version.stdout()).trim() || null,
-        errorMessage: null,
-        lastSnapshotAt: restoredSnapshot?.updatedAt ?? null,
-        startedAt,
-      }),
-      expiresAt: getExpiresAt(startedAt, settings),
-      updatedAt: startedAt,
-    },
-    commands,
-  };
+    if (restoredBoot.sandboxRecord.status === 'running') {
+      return {
+        sandboxRecord: restoredBoot.sandboxRecord,
+        commands: restoredBoot.commands,
+      };
+    }
+
+    await stopOpenClawSandbox(restoredBoot.sandbox.sandboxId).catch(() => {});
+    const discardCommands = await discardStoredSnapshot(
+      storedSnapshot,
+      settings,
+      `Stored snapshot ${storedSnapshot.snapshotId} restored an unhealthy sandbox. Falling back to a clean sandbox.`,
+    );
+    const cleanBoot = await bootOpenClawSandbox(settings, null, [
+      ...restoredBoot.commands,
+      ...discardCommands,
+    ]);
+
+    return {
+      sandboxRecord: cleanBoot.sandboxRecord,
+      commands: cleanBoot.commands,
+    };
+  } catch (error) {
+    const discardCommands = await discardStoredSnapshot(
+      storedSnapshot,
+      settings,
+      `Stored snapshot ${storedSnapshot.snapshotId} could not be restored. Falling back to a clean sandbox. ${error instanceof Error ? error.message : 'Unknown restore error.'}`,
+    );
+    const cleanBoot = await bootOpenClawSandbox(settings, null, discardCommands);
+
+    return {
+      sandboxRecord: cleanBoot.sandboxRecord,
+      commands: cleanBoot.commands,
+    };
+  }
 }
 
 export async function runTrackedCommand(
@@ -438,7 +524,7 @@ export async function syncOpenClawSessions(
       [
         `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
         `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
-        'openclaw sessions --all-agents --json',
+        `timeout ${SESSION_SYNC_TIMEOUT_SECONDS}s openclaw sessions --all-agents --json`,
       ].join(' && '),
     ];
     const sessionsResult = await sandbox.runCommand({
@@ -448,6 +534,13 @@ export async function syncOpenClawSessions(
     });
     const rawStdout = await sessionsResult.stdout();
     const rawStderr = await sessionsResult.stderr();
+    const timedOut = sessionsResult.exitCode === 124;
+    const fallbackError =
+      rawStderr ||
+      rawStdout ||
+      (timedOut
+        ? `openclaw sessions timed out after ${SESSION_SYNC_TIMEOUT_SECONDS}s.`
+        : `openclaw sessions exited with code ${sessionsResult.exitCode}.`);
     const sessionsCommand: CommandRecord = {
       cmdId: sessionsResult.cmdId,
       sandboxId,
@@ -456,14 +549,28 @@ export async function syncOpenClawSessions(
       status: sessionsResult.exitCode === 0 ? 'succeeded' : 'failed',
       exitCode: sessionsResult.exitCode,
       stdout: redactSecrets(truncate(rawStdout), settings) || null,
-      stderr: redactSecrets(truncate(rawStderr), settings) || null,
+      stderr:
+        redactSecrets(truncate(rawStderr || (timedOut ? fallbackError : '')), settings) || null,
       startedAt,
       finishedAt: Date.now(),
     };
 
-    const parsed = rawStdout ? JSON.parse(rawStdout) : { sessions: [] };
+    if (sessionsResult.exitCode !== 0) {
+      throw new Error(
+        redactSecrets(truncate(fallbackError), settings) ?? 'Failed to sync sessions.',
+      );
+    }
+
+    let parsed: { sessions?: Record<string, unknown>[] };
+
+    try {
+      parsed = rawStdout ? (JSON.parse(rawStdout) as { sessions?: Record<string, unknown>[] }) : {};
+    } catch {
+      throw new Error('OpenClaw returned invalid JSON for session sync.');
+    }
+
     const sessions = Array.isArray(parsed.sessions)
-      ? parsed.sessions.map((session: Record<string, unknown>) => ({
+      ? parsed.sessions.map((session) => ({
           sessionKey: String(session.key ?? ''),
           agentId: String(session.agentId ?? 'main'),
           model: typeof session.model === 'string' ? session.model : null,
@@ -478,7 +585,7 @@ export async function syncOpenClawSessions(
       sandbox: {
         sandboxId,
         status: sandbox.status === 'running' ? 'running' : 'stopped',
-        runtime: 'node24',
+        runtime: DEFAULT_RUNTIME,
         previewUrl: sandbox.domain(18789),
         gatewayUrl: sandbox.domain(18789),
         sourceSnapshotId: sandbox.sourceSnapshotId ?? null,

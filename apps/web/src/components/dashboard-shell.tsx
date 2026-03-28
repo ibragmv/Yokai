@@ -15,6 +15,12 @@ import { formatRelativeDate } from '@/lib/utils';
 
 type Section = 'overview' | 'activity' | 'settings';
 
+const SECTION_LABELS: Record<Section, string> = {
+  overview: 'Overview',
+  activity: 'Activity',
+  settings: 'Settings',
+};
+
 function createFormValues(payload: DashboardPayload): SettingsFormValues {
   return {
     displayName: payload.settings.displayName,
@@ -36,12 +42,55 @@ function isSameForm(left: SettingsFormValues, right: SettingsFormValues) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function countCsvValues(value: string) {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean).length;
+}
+
 function formatUsageValue(snapshot: UsageSnapshot) {
   if (snapshot.source === 'ai-gateway') {
     return snapshot.creditsRemaining ?? snapshot.creditsUsed ?? 0;
   }
 
   return snapshot.cpuMs ?? 0;
+}
+
+function formatBytes(value: number | null) {
+  if (typeof value !== 'number') {
+    return 'No network sample';
+  }
+
+  if (value < 1024) {
+    return `${value} B`;
+  }
+
+  if (value < 1024 * 1024) {
+    return `${Math.round(value / 1024)} KB`;
+  }
+
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatSnapshotLabel(snapshotId: string | null | undefined) {
+  if (!snapshotId) {
+    return 'Clean boot';
+  }
+
+  if (snapshotId.length <= 16) {
+    return snapshotId;
+  }
+
+  return `${snapshotId.slice(0, 8)}…${snapshotId.slice(-6)}`;
+}
+
+function formatGatewayLabel(url: string | null | undefined) {
+  if (!url) {
+    return 'Sandbox gateway appears here after boot.';
+  }
+
+  return url.replace(/^https?:\/\//, '');
 }
 
 export function DashboardShell({ initialData }: { initialData: DashboardPayload }) {
@@ -53,6 +102,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
 
   const savedFormValues = createFormValues(data);
   const isDirty = !isSameForm(draft, savedFormValues);
+  const allowlistedUsers = countCsvValues(draft.allowedUserIds);
+  const allowlistedGroups = countCsvValues(draft.allowedGroupIds);
 
   function applyPayload(payload: DashboardPayload, options?: { preserveDraft?: boolean }) {
     setData(payload);
@@ -90,7 +141,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
       if (document.visibilityState === 'visible') {
         void refreshLiveData();
       }
-    }, 15000);
+    }, 15_000);
 
     return () => window.clearInterval(interval);
   }, [refreshLiveData]);
@@ -139,6 +190,25 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
     });
   }
 
+  const heroFacts = [
+    {
+      label: 'Snapshot source',
+      value: formatSnapshotLabel(data.sandbox?.sourceSnapshotId),
+    },
+    {
+      label: 'Allowlist',
+      value: `${allowlistedUsers} users / ${allowlistedGroups} groups`,
+    },
+    {
+      label: 'Sandbox TTL',
+      value: `${Math.max(draft.timeoutSeconds, 60)}s`,
+    },
+    {
+      label: 'Last sync',
+      value: formatRelativeDate(data.sandbox?.updatedAt ?? null),
+    },
+  ];
+
   const stats = [
     {
       label: 'Runtime state',
@@ -156,14 +226,39 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
       detail: data.commands[0] ? formatRelativeDate(data.commands[0].startedAt) : 'No command log',
     },
     {
-      label: 'Allowlisted users',
-      value: String(
-        draft.allowedUserIds
-          .split(',')
-          .map((entry) => entry.trim())
-          .filter(Boolean).length,
-      ),
-      detail: draft.requireMention ? 'Mention required in groups' : 'Free in groups',
+      label: 'Gateway model',
+      value: draft.defaultModel.split('/').at(-1) ?? draft.defaultModel,
+      detail: draft.requireMention ? 'Mention required in groups' : 'Messages accepted directly',
+    },
+  ];
+
+  const runtimeDetails = [
+    {
+      label: 'Gateway URL',
+      value: data.sandbox?.gatewayUrl ?? 'Not running',
+    },
+    {
+      label: 'OpenClaw version',
+      value: data.sandbox?.openClawVersion ?? 'Unknown version',
+    },
+    {
+      label: 'Snapshot restore',
+      value: formatSnapshotLabel(data.sandbox?.sourceSnapshotId),
+    },
+    {
+      label: 'Expires',
+      value: formatRelativeDate(data.sandbox?.expiresAt ?? null),
+    },
+    {
+      label: 'CPU usage',
+      value:
+        typeof data.sandbox?.activeCpuUsageMs === 'number'
+          ? `${data.sandbox.activeCpuUsageMs} ms`
+          : 'No CPU sample',
+    },
+    {
+      label: 'Network traffic',
+      value: formatBytes(data.sandbox?.networkBytes ?? null),
     },
   ];
 
@@ -174,34 +269,70 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
       <section className="dashboard-frame">
         <header className="hero-panel">
           <div className="hero-copy">
-            <YokaiLogo className="hero-brand" subtitle="Sandbox operations" />
+            <div className="hero-topline">
+              <YokaiLogo className="hero-brand" subtitle="Sandbox control room" />
+              <span className={`status-pill status-${data.sandbox?.status ?? 'idle'}`}>
+                {data.sandbox?.status ?? 'idle'}
+              </span>
+            </div>
+
             <p className="eyebrow">OpenClaw sandbox operations</p>
             <h1>{data.settings.displayName}</h1>
             <p className="hero-text">
-              A live control room for sandbox lifecycle, gateway configuration, session telemetry,
-              and command history with direct server-side state instead of stale middle layers.
+              Live control room for restore, rollover, gateway health, session telemetry, and the
+              command trail behind every sandbox transition.
             </p>
+
+            <div className="hero-highlights">
+              {heroFacts.map((fact) => (
+                <div className="hero-chip" key={fact.label}>
+                  <span>{fact.label}</span>
+                  <strong>{fact.value}</strong>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="hero-side">
             <div className="status-card">
-              <span className="status-label">Current runtime</span>
-              <span className={`status-pill status-${data.sandbox?.status ?? 'idle'}`}>
-                {data.sandbox?.status ?? 'idle'}
-              </span>
-              <p className="status-copy">
-                {data.sandbox?.gatewayUrl
-                  ? data.sandbox.gatewayUrl
-                  : 'Sandbox gateway URL appears here after boot.'}
-              </p>
+              <span className="status-label">Gateway endpoint</span>
+              {data.sandbox?.gatewayUrl ? (
+                <a
+                  className="status-link"
+                  href={data.sandbox.gatewayUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {formatGatewayLabel(data.sandbox.gatewayUrl)}
+                </a>
+              ) : (
+                <p className="status-copy">{formatGatewayLabel(data.sandbox?.gatewayUrl)}</p>
+              )}
+
+              <div className="status-meta">
+                <div>
+                  <span>Sandbox ID</span>
+                  <strong className="mono">{data.sandbox?.sandboxId ?? 'Not started'}</strong>
+                </div>
+                <div>
+                  <span>Last snapshot</span>
+                  <strong>{formatRelativeDate(data.sandbox?.lastSnapshotAt ?? null)}</strong>
+                </div>
+              </div>
             </div>
 
             <div className="action-row">
-              <button className="secondary-button" onClick={refreshDashboard} type="button">
+              <button
+                className="secondary-button"
+                disabled={isPending}
+                onClick={refreshDashboard}
+                type="button"
+              >
                 Refresh
               </button>
               <button
                 className="secondary-button"
+                disabled={isPending}
                 onClick={() => executeSandboxAction('sync')}
                 type="button"
               >
@@ -209,6 +340,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
               </button>
               <button
                 className="primary-button"
+                disabled={isPending}
                 onClick={() => executeSandboxAction('start')}
                 type="button"
               >
@@ -224,8 +356,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
         </header>
 
         <div className="toolbar">
-          <div className="segmented-control" role="tablist" aria-label="Dashboard sections">
-            {(['overview', 'activity', 'settings'] as const).map((item) => (
+          <div className="segmented-control" aria-label="Dashboard sections" role="tablist">
+            {(Object.keys(SECTION_LABELS) as Section[]).map((item) => (
               <button
                 aria-selected={section === item}
                 className="segment"
@@ -235,14 +367,14 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                 role="tab"
                 type="button"
               >
-                {item}
+                {SECTION_LABELS[item]}
               </button>
             ))}
           </div>
 
           <div className="toolbar-meta">
             <span>{isPending ? 'Working…' : 'Auto-refresh every 15s'}</span>
-            <span>{isDirty ? 'Unsaved settings preserved' : 'Settings in sync'}</span>
+            <span>{isDirty ? 'Local edits preserved until save' : 'Settings in sync'}</span>
           </div>
         </div>
 
@@ -269,6 +401,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                   </div>
                   <button
                     className="ghost-link"
+                    disabled={isPending || !data.sandbox}
                     onClick={() => executeSandboxAction('stop')}
                     type="button"
                   >
@@ -277,34 +410,12 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                 </div>
 
                 <dl className="data-grid">
-                  <div>
-                    <dt>Gateway URL</dt>
-                    <dd>{data.sandbox?.gatewayUrl ?? 'Not running'}</dd>
-                  </div>
-                  <div>
-                    <dt>OpenClaw</dt>
-                    <dd>{data.sandbox?.openClawVersion ?? 'Unknown version'}</dd>
-                  </div>
-                  <div>
-                    <dt>Expires</dt>
-                    <dd>{formatRelativeDate(data.sandbox?.expiresAt ?? null)}</dd>
-                  </div>
-                  <div>
-                    <dt>CPU usage</dt>
-                    <dd>
-                      {typeof data.sandbox?.activeCpuUsageMs === 'number'
-                        ? `${data.sandbox.activeCpuUsageMs} ms`
-                        : 'No CPU sample'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Network traffic</dt>
-                    <dd>
-                      {typeof data.sandbox?.networkBytes === 'number'
-                        ? `${Math.round(data.sandbox.networkBytes / 1024)} KB`
-                        : 'No network sample'}
-                    </dd>
-                  </div>
+                  {runtimeDetails.map((detail) => (
+                    <div key={detail.label}>
+                      <dt>{detail.label}</dt>
+                      <dd>{detail.value}</dd>
+                    </div>
+                  ))}
                 </dl>
 
                 <div className="footer-meta">
@@ -338,7 +449,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                       </div>
                     ))
                   ) : (
-                    <p className="empty-copy">No snapshots yet.</p>
+                    <p className="empty-copy">No usage snapshots have been recorded yet.</p>
                   )}
                 </div>
               </article>
@@ -375,7 +486,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                     </div>
                   ))
                 ) : (
-                  <p className="empty-copy">No session data has been synced yet.</p>
+                  <p className="empty-copy">Session history appears here after the next sync.</p>
                 )}
               </div>
             </article>
@@ -417,7 +528,9 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                     </article>
                   ))
                 ) : (
-                  <p className="empty-copy">No commands have been tracked yet.</p>
+                  <p className="empty-copy">
+                    Tracked commands will appear here after the next action.
+                  </p>
                 )}
               </div>
             </article>
@@ -490,6 +603,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                 <label className="field">
                   <span>Sandbox timeout (seconds)</span>
                   <input
+                    min={60}
                     onChange={(event) =>
                       setDraft((current) => ({
                         ...current,
