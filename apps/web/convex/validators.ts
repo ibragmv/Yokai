@@ -96,27 +96,6 @@ export const dashboardStateRecordValidator = v.object({
   updatedAt: v.number(),
 });
 
-export const credentialRecordValidator = v.object({
-  _id: v.id('credentials'),
-  _creationTime: v.number(),
-  key: v.string(),
-  login: v.string(),
-  passwordHash: v.string(),
-  passwordSalt: v.string(),
-  createdAt: v.number(),
-  updatedAt: v.number(),
-});
-
-export const sessionRecordDbValidator = v.object({
-  _id: v.id('sessions'),
-  _creationTime: v.number(),
-  credentialId: v.id('credentials'),
-  tokenHash: v.string(),
-  expiresAt: v.number(),
-  createdAt: v.number(),
-  lastSeenAt: v.number(),
-});
-
 export const bootstrapStatusValidator = v.object({
   hasCredentials: v.boolean(),
 });

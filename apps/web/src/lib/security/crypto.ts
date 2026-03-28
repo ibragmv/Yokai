@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const DATA_DIRECTORY = path.join(process.cwd(), '.data');
@@ -58,17 +58,4 @@ export async function decryptValue(payload: EncryptedPayload): Promise<string> {
   ]);
 
   return decrypted.toString('utf8');
-}
-
-export async function hasEncryptionKey(): Promise<boolean> {
-  if (process.env.YOKAI_ENCRYPTION_KEY) {
-    return true;
-  }
-
-  try {
-    await access(KEY_FILE);
-    return true;
-  } catch {
-    return false;
-  }
 }

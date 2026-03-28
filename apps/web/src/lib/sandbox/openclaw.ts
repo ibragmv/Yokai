@@ -9,11 +9,6 @@ import { truncate } from '@/lib/utils';
 
 const OPENCLAW_ROOT = '/vercel/sandbox/openclaw';
 
-type SandboxRunResult = {
-  sandbox: Sandbox;
-  command: CommandRecord;
-};
-
 export async function createOpenClawSandbox(settings: DashboardSettings): Promise<{
   sandboxRecord: SandboxRecord;
   installCommand: CommandRecord;
@@ -46,12 +41,8 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
     settings,
   });
 
-  if (installResult.command.status === 'failed') {
-    throw new Error(
-      installResult.command.stderr ||
-        installResult.command.stdout ||
-        'OpenClaw installation failed',
-    );
+  if (installResult.status === 'failed') {
+    throw new Error(installResult.stderr || installResult.stdout || 'OpenClaw installation failed');
   }
 
   await runTrackedCommand(sandbox, {
@@ -87,7 +78,7 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
       startedAt: Date.now(),
       updatedAt: Date.now(),
     },
-    installCommand: installResult.command,
+    installCommand: installResult,
   };
 }
 
@@ -99,7 +90,7 @@ export async function runTrackedCommand(
     detached?: boolean;
     settings: DashboardSettings;
   },
-): Promise<SandboxRunResult> {
+): Promise<CommandRecord> {
   const startedAt = Date.now();
 
   if (input.detached) {
@@ -111,19 +102,16 @@ export async function runTrackedCommand(
     });
 
     return {
-      sandbox,
-      command: {
-        cmdId: command.cmdId,
-        sandboxId: sandbox.sandboxId,
-        command: input.cmd,
-        args: input.args ?? [],
-        status: 'running',
-        exitCode: null,
-        stdout: null,
-        stderr: null,
-        startedAt,
-        finishedAt: null,
-      },
+      cmdId: command.cmdId,
+      sandboxId: sandbox.sandboxId,
+      command: input.cmd,
+      args: input.args ?? [],
+      status: 'running',
+      exitCode: null,
+      stdout: null,
+      stderr: null,
+      startedAt,
+      finishedAt: null,
     };
   }
 
@@ -136,19 +124,16 @@ export async function runTrackedCommand(
   const stderr = truncate(await result.stderr());
 
   return {
-    sandbox,
-    command: {
-      cmdId: result.cmdId,
-      sandboxId: sandbox.sandboxId,
-      command: input.cmd,
-      args: input.args ?? [],
-      status: result.exitCode === 0 ? 'succeeded' : 'failed',
-      exitCode: result.exitCode,
-      stdout: redactSecrets(stdout, input.settings) || null,
-      stderr: redactSecrets(stderr, input.settings) || null,
-      startedAt,
-      finishedAt: Date.now(),
-    },
+    cmdId: result.cmdId,
+    sandboxId: sandbox.sandboxId,
+    command: input.cmd,
+    args: input.args ?? [],
+    status: result.exitCode === 0 ? 'succeeded' : 'failed',
+    exitCode: result.exitCode,
+    stdout: redactSecrets(stdout, input.settings) || null,
+    stderr: redactSecrets(stderr, input.settings) || null,
+    startedAt,
+    finishedAt: Date.now(),
   };
 }
 

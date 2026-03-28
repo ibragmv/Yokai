@@ -170,17 +170,6 @@ export async function readDashboardState(): Promise<DashboardState> {
   return deserializeState(record.payload);
 }
 
-export async function writeDashboardState(nextState: DashboardState): Promise<DashboardState> {
-  const normalized = normalizeState(nextState);
-
-  writeQueue = writeQueue.then(async () => {
-    await writeStateRecord(normalized);
-  });
-
-  await writeQueue;
-  return normalized;
-}
-
 export async function updateDashboardState(
   updater: (current: DashboardState) => DashboardState | Promise<DashboardState>,
 ): Promise<DashboardState> {
