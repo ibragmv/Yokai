@@ -2,14 +2,16 @@
   "name": "web",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "bunx convex dev --run-sh 'bun run next:dev'",
+    "next:dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "biome check src next.config.ts",
+    "lint": "biome check src convex/*.ts next.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@vercel/sandbox": "^1.8.0",
+    "convex": "^1.34.1",
     "next": "^16.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

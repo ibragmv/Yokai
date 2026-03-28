@@ -1,3 +1,5 @@
+import 'server-only';
+
 import type { DashboardSettings } from '@/lib/types';
 import { splitCsv } from '@/lib/utils';
 
@@ -21,7 +23,7 @@ export function buildOpenClawConfig(settings: DashboardSettings): string {
         port: 18789,
         auth: {
           mode: 'token',
-          token: settings.gatewayAuthToken,
+          token: '${OPENCLAW_GATEWAY_TOKEN}',
         },
       },
       agents: {
@@ -61,7 +63,7 @@ export function buildOpenClawConfig(settings: DashboardSettings): string {
       channels: {
         telegram: {
           enabled: true,
-          botToken: settings.telegramBotToken,
+          botToken: '${TELEGRAM_BOT_TOKEN}',
           dmPolicy: 'allowlist',
           allowFrom: allowedUsers,
           groupPolicy: 'allowlist',
@@ -82,6 +84,7 @@ export function sandboxEnvironment(settings: DashboardSettings): Record<string, 
   const env: Record<string, string> = {
     AI_GATEWAY_API_KEY: settings.aiGatewayApiKey,
     OPENCLAW_GATEWAY_TOKEN: settings.gatewayAuthToken,
+    TELEGRAM_BOT_TOKEN: settings.telegramBotToken,
   };
 
   if (process.env.VERCEL_OIDC_TOKEN) {

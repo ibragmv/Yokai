@@ -3,6 +3,7 @@
 import { useEffect, useEffectEvent, useState, useTransition } from 'react';
 
 import { runSandboxAction, saveSettingsAction } from '@/app/actions';
+import { logoutAdminAction } from '@/app/login/actions';
 import type {
   DashboardActionResult,
   DashboardPayload,
@@ -48,7 +49,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const isDirty = !isSameForm(draft, createFormValues(data));
+  const savedFormValues = createFormValues(data);
+  const isDirty = !isSameForm(draft, savedFormValues);
 
   function applyPayload(payload: DashboardPayload, options?: { preserveDraft?: boolean }) {
     setData(payload);
@@ -209,6 +211,11 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
               >
                 Start sandbox
               </button>
+              <form action={logoutAdminAction}>
+                <button className="ghost-link" type="submit">
+                  Sign out
+                </button>
+              </form>
             </div>
           </div>
         </header>
@@ -434,12 +441,15 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                 <label className="field">
                   <span>Telegram bot token</span>
                   <input
+                    autoComplete="off"
                     onChange={(event) =>
                       setDraft((current) => ({
                         ...current,
                         telegramBotToken: event.target.value,
                       }))
                     }
+                    spellCheck={false}
+                    type="password"
                     value={draft.telegramBotToken}
                   />
                 </label>
@@ -528,12 +538,15 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                 <label className="field">
                   <span>Vercel AI Gateway API key</span>
                   <input
+                    autoComplete="off"
                     onChange={(event) =>
                       setDraft((current) => ({
                         ...current,
                         aiGatewayApiKey: event.target.value,
                       }))
                     }
+                    spellCheck={false}
+                    type="password"
                     value={draft.aiGatewayApiKey}
                   />
                 </label>
@@ -541,12 +554,15 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                 <label className="field">
                   <span>Vercel API token</span>
                   <input
+                    autoComplete="off"
                     onChange={(event) =>
                       setDraft((current) => ({
                         ...current,
                         vercelApiToken: event.target.value,
                       }))
                     }
+                    spellCheck={false}
+                    type="password"
                     value={draft.vercelApiToken}
                   />
                 </label>
@@ -579,14 +595,22 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
 
                 <label className="field">
                   <span>Gateway auth token</span>
-                  <input disabled value={data.settings.gatewayAuthToken} />
+                  <input
+                    autoComplete="off"
+                    disabled
+                    type="password"
+                    value={data.settings.gatewayAuthToken}
+                  />
                 </label>
               </div>
 
               <div className="settings-footer">
                 <div>
                   <strong>{isDirty ? 'Unsaved changes' : 'Everything saved'}</strong>
-                  <p>Last saved {formatRelativeDate(data.settings.updatedAt)}</p>
+                  <p>
+                    Last saved {formatRelativeDate(data.settings.updatedAt)}. Secrets stay masked in
+                    the UI and encrypted at rest.
+                  </p>
                 </div>
                 <button
                   className="primary-button"

@@ -6,8 +6,10 @@ Administrative console for running OpenClaw inside Vercel Sandbox with a Next.js
 
 - Next.js 16 App Router
 - React 19
+- Convex
 - Vercel Sandbox
-- Local file-backed state in `apps/web/.data`
+- Convex-backed control-plane state and admin sessions
+- Login-protected admin panel
 
 ## Development
 
@@ -15,4 +17,4 @@ Administrative console for running OpenClaw inside Vercel Sandbox with a Next.js
 bun run dev
 ```
 
-The root script delegates directly to the Next.js app so the terminal output stays focused on a single dev server instead of Turbo task noise.
+The root script delegates to the web app, where `bunx convex dev` pushes backend changes and launches the Next.js dev server in one command.

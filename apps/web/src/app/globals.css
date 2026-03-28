@@ -515,6 +515,30 @@ input:disabled {
   box-shadow: var(--shadow);
 }
 
+.auth-screen {
+  padding-inline: 1rem;
+}
+
+.auth-card {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.auth-copy {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.auth-notice {
+  background: rgba(181, 48, 48, 0.12);
+  border-color: rgba(181, 48, 48, 0.24);
+}
+
 @media (max-width: 1080px) {
   .hero-panel,
   .content-grid,

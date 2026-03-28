@@ -1,7 +1,7 @@
 'use client';
 
 export default function RouteError({
-  error,
+  error: _error,
   reset,
 }: {
   error: Error & { digest?: string };
@@ -12,7 +12,9 @@ export default function RouteError({
       <div className="state-card">
         <p className="eyebrow">Runtime issue</p>
         <h1>Dashboard crashed</h1>
-        <p className="state-copy">{error.message || 'Unexpected application error.'}</p>
+        <p className="state-copy">
+          A protected server-side operation failed. Sensitive details were intentionally hidden.
+        </p>
         <button className="primary-button" onClick={reset} type="button">
           Try again
         </button>

@@ -1,6 +1,9 @@
+import 'server-only';
+
 import { Sandbox } from '@vercel/sandbox';
 
 import { buildOpenClawConfig, sandboxEnvironment } from '@/lib/openclaw/config';
+import { redactSecrets } from '@/lib/security/redaction';
 import type { CommandRecord, DashboardSettings, SandboxRecord, SessionRecord } from '@/lib/types';
 import { truncate } from '@/lib/utils';
 
@@ -40,6 +43,7 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
         'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-prompt --no-onboard',
       ].join(' && '),
     ],
+    settings,
   });
 
   if (installResult.command.status === 'failed') {
@@ -61,6 +65,7 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
       ].join(' && '),
     ],
     detached: true,
+    settings,
   });
 
   const version = await sandbox.runCommand('bash', ['-lc', 'openclaw --version']);
@@ -92,6 +97,7 @@ export async function runTrackedCommand(
     cmd: string;
     args?: string[];
     detached?: boolean;
+    settings: DashboardSettings;
   },
 ): Promise<SandboxRunResult> {
   const startedAt = Date.now();
@@ -138,15 +144,18 @@ export async function runTrackedCommand(
       args: input.args ?? [],
       status: result.exitCode === 0 ? 'succeeded' : 'failed',
       exitCode: result.exitCode,
-      stdout: stdout || null,
-      stderr: stderr || null,
+      stdout: redactSecrets(stdout, input.settings) || null,
+      stderr: redactSecrets(stderr, input.settings) || null,
       startedAt,
       finishedAt: Date.now(),
     },
   };
 }
 
-export async function syncOpenClawSessions(sandboxId: string): Promise<{
+export async function syncOpenClawSessions(
+  sandboxId: string,
+  settings: DashboardSettings,
+): Promise<{
   sandbox: SandboxRecord;
   sessions: SessionRecord[];
   commands: CommandRecord[];
@@ -175,8 +184,8 @@ export async function syncOpenClawSessions(sandboxId: string): Promise<{
     args,
     status: sessionsResult.exitCode === 0 ? 'succeeded' : 'failed',
     exitCode: sessionsResult.exitCode,
-    stdout: truncate(rawStdout) || null,
-    stderr: truncate(rawStderr) || null,
+    stdout: redactSecrets(truncate(rawStdout), settings) || null,
+    stderr: redactSecrets(truncate(rawStderr), settings) || null,
     startedAt,
     finishedAt: Date.now(),
   };

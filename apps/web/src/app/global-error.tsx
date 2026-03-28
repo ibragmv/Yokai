@@ -1,7 +1,7 @@
 'use client';
 
 export default function GlobalError({
-  error,
+  error: _error,
   reset,
 }: {
   error: Error & { digest?: string };
@@ -14,7 +14,9 @@ export default function GlobalError({
           <div className="state-card">
             <p className="eyebrow">Global failure</p>
             <h1>Yokai is unavailable</h1>
-            <p className="state-copy">{error.message || 'Unexpected application error.'}</p>
+            <p className="state-copy">
+              A protected server-side operation failed. Sensitive details were intentionally hidden.
+            </p>
             <button className="primary-button" onClick={reset} type="button">
               Retry application
             </button>

@@ -1,7 +1,10 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import 'server-only';
 
+import { randomUUID } from 'node:crypto';
+
+import { fetchMutation, fetchQuery } from 'convex/nextjs';
+
+import { decryptValue, encryptValue } from '@/lib/security/crypto';
 import type {
   CommandRecord,
   DashboardSettings,
@@ -9,6 +12,7 @@ import type {
   SessionRecord,
   UsageSnapshot,
 } from '@/lib/types';
+import { api } from '@convex/_generated/api';
 
 export type DashboardState = {
   settings: DashboardSettings;
@@ -18,10 +22,28 @@ export type DashboardState = {
   usage: UsageSnapshot[];
 };
 
-const DATA_DIRECTORY = path.join(process.cwd(), '.data');
-const DATA_FILE = path.join(DATA_DIRECTORY, 'yokai-control-plane.json');
+const STATE_KEY = 'primary';
 
 let writeQueue = Promise.resolve();
+
+const SECRET_SETTING_KEYS = [
+  'telegramBotToken',
+  'aiGatewayApiKey',
+  'vercelApiToken',
+  'gatewayAuthToken',
+] as const;
+
+type SecretSettingKey = (typeof SECRET_SETTING_KEYS)[number];
+type EncryptedField = Awaited<ReturnType<typeof encryptValue>>;
+
+type PersistedDashboardState = {
+  settings: Omit<DashboardSettings, SecretSettingKey>;
+  encryptedSettings: Record<SecretSettingKey, EncryptedField>;
+  sandbox: SandboxRecord | null;
+  sessions: SessionRecord[];
+  commands: CommandRecord[];
+  usage: UsageSnapshot[];
+};
 
 function createDefaultState(): DashboardState {
   return {
@@ -47,8 +69,69 @@ function createDefaultState(): DashboardState {
   };
 }
 
-async function ensureDataFile() {
-  await mkdir(DATA_DIRECTORY, { recursive: true });
+function splitSettings(settings: DashboardSettings) {
+  return {
+    plainSettings: {
+      displayName: settings.displayName,
+      vercelProjectId: settings.vercelProjectId,
+      vercelTeamId: settings.vercelTeamId,
+      allowedUserIds: settings.allowedUserIds,
+      allowedGroupIds: settings.allowedGroupIds,
+      requireMention: settings.requireMention,
+      timeoutSeconds: settings.timeoutSeconds,
+      defaultModel: settings.defaultModel,
+      updatedAt: settings.updatedAt,
+    },
+    secretSettings: {
+      telegramBotToken: settings.telegramBotToken,
+      aiGatewayApiKey: settings.aiGatewayApiKey,
+      vercelApiToken: settings.vercelApiToken,
+      gatewayAuthToken: settings.gatewayAuthToken,
+    },
+  };
+}
+
+async function serializeState(state: DashboardState): Promise<PersistedDashboardState> {
+  const { plainSettings, secretSettings } = splitSettings(state.settings);
+  const encryptedSettings = Object.fromEntries(
+    await Promise.all(
+      SECRET_SETTING_KEYS.map(
+        async (key) => [key, await encryptValue(secretSettings[key])] as const,
+      ),
+    ),
+  ) as Record<SecretSettingKey, EncryptedField>;
+
+  return {
+    settings: plainSettings,
+    encryptedSettings,
+    sandbox: state.sandbox,
+    sessions: state.sessions,
+    commands: state.commands,
+    usage: state.usage,
+  };
+}
+
+async function deserializeState(payload: PersistedDashboardState): Promise<DashboardState> {
+  const decryptedEntries = await Promise.all(
+    SECRET_SETTING_KEYS.map(
+      async (key) => [key, await decryptValue(payload.encryptedSettings[key])] as const,
+    ),
+  );
+  const decryptedSettings = Object.fromEntries(decryptedEntries) as Record<
+    SecretSettingKey,
+    string
+  >;
+
+  return normalizeState({
+    settings: {
+      ...payload.settings,
+      ...decryptedSettings,
+    },
+    sandbox: payload.sandbox,
+    sessions: payload.sessions,
+    commands: payload.commands,
+    usage: payload.usage,
+  });
 }
 
 function normalizeState(input: Partial<DashboardState> | null | undefined): DashboardState {
@@ -68,31 +151,30 @@ function normalizeState(input: Partial<DashboardState> | null | undefined): Dash
   };
 }
 
-async function writeStateFile(state: DashboardState) {
-  await ensureDataFile();
-  await writeFile(DATA_FILE, JSON.stringify(state, null, 2), 'utf8');
+async function writeStateRecord(state: DashboardState) {
+  await fetchMutation(api.dashboard.upsertState, {
+    key: STATE_KEY,
+    payload: await serializeState(state),
+  });
 }
 
 export async function readDashboardState(): Promise<DashboardState> {
-  try {
-    const raw = await readFile(DATA_FILE, 'utf8');
-    return normalizeState(JSON.parse(raw) as DashboardState);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      const initialState = createDefaultState();
-      await writeStateFile(initialState);
-      return initialState;
-    }
+  const record = await fetchQuery(api.dashboard.getState, { key: STATE_KEY });
 
-    throw error;
+  if (!record) {
+    const initialState = createDefaultState();
+    await writeStateRecord(initialState);
+    return initialState;
   }
+
+  return deserializeState(record.payload);
 }
 
 export async function writeDashboardState(nextState: DashboardState): Promise<DashboardState> {
   const normalized = normalizeState(nextState);
 
   writeQueue = writeQueue.then(async () => {
-    await writeStateFile(normalized);
+    await writeStateRecord(normalized);
   });
 
   await writeQueue;
@@ -107,7 +189,7 @@ export async function updateDashboardState(
   writeQueue = writeQueue.then(async () => {
     const current = await readDashboardState();
     updatedState = normalizeState(await updater(current));
-    await writeStateFile(updatedState);
+    await writeStateRecord(updatedState);
   });
 
   await writeQueue;

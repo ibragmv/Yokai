@@ -19,6 +19,11 @@ export type DashboardSettings = SettingsFormValues & {
   updatedAt: number | null;
 };
 
+export type DashboardPublicSettings = SettingsFormValues & {
+  gatewayAuthToken: string;
+  updatedAt: number | null;
+};
+
 export type SandboxRecord = {
   sandboxId: string;
   status: SandboxStatus;
@@ -65,7 +70,7 @@ export type UsageSnapshot = {
 };
 
 export type DashboardPayload = {
-  settings: DashboardSettings;
+  settings: DashboardPublicSettings;
   sandbox: SandboxRecord | null;
   sessions: SessionRecord[];
   commands: CommandRecord[];

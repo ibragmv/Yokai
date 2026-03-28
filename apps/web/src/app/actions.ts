@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 
+import { requireAdminSession } from '@/lib/auth/session';
 import { loadDashboardPayload } from '@/lib/dashboard/data';
 import { fetchGatewayCredits } from '@/lib/gateway/usage';
 import {
@@ -10,6 +11,7 @@ import {
   stopOpenClawSandbox,
   syncOpenClawSessions,
 } from '@/lib/sandbox/openclaw';
+import { redactSecrets } from '@/lib/security/redaction';
 import { appendCommand, appendUsage, readDashboardState, updateDashboardState } from '@/lib/store';
 import type { DashboardActionResult, SettingsFormValues } from '@/lib/types';
 
@@ -31,6 +33,10 @@ async function getResult(ok: boolean, message: string): Promise<DashboardActionR
     message,
     payload: await loadDashboardPayload(),
   };
+}
+
+function sanitizeActionError(error: unknown, settings: Parameters<typeof redactSecrets>[1]) {
+  return redactSecrets(error instanceof Error ? error.message : 'Unknown sandbox error', settings);
 }
 
 async function recordGatewayCredits() {
@@ -60,6 +66,7 @@ async function recordGatewayCredits() {
 export async function saveSettingsAction(
   input: SettingsFormValues,
 ): Promise<DashboardActionResult> {
+  await requireAdminSession();
   const current = await readDashboardState();
 
   await updateDashboardState((state) => ({
@@ -87,6 +94,7 @@ export async function saveSettingsAction(
 }
 
 export async function runSandboxAction(action: SandboxAction): Promise<DashboardActionResult> {
+  await requireAdminSession();
   const state = await readDashboardState();
 
   if (action === 'start' && state.sandbox?.status === 'running') {
@@ -123,7 +131,7 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
     }
 
     if (action === 'sync' && state.sandbox) {
-      const synced = await syncOpenClawSessions(state.sandbox.sandboxId);
+      const synced = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
       await updateDashboardState((current) => ({
         ...current,
         sandbox: synced.sandbox,
@@ -154,18 +162,20 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
 
     return getResult(true, message);
   } catch (error) {
+    const message = sanitizeActionError(error, state.settings) ?? 'Sandbox action failed.';
+
     await updateDashboardState((current) => ({
       ...current,
       sandbox: current.sandbox
         ? {
             ...current.sandbox,
             status: 'error',
-            errorMessage: error instanceof Error ? error.message : 'Unknown sandbox error',
+            errorMessage: message,
             updatedAt: Date.now(),
           }
         : null,
     }));
 
-    return getResult(false, error instanceof Error ? error.message : 'Sandbox action failed.');
+    return getResult(false, message);
   }
 }
