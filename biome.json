@@ -2,7 +2,13 @@
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "ignore": ["**/.next/**", "**/.data/**", "**/.env.local"]
+    "ignore": [
+      "**/.next/**",
+      "**/.data/**",
+      "**/.env",
+      "**/convex/_generated/**",
+      "**/next-env.d.ts"
+    ]
   },
   "formatter": {
     "enabled": true,

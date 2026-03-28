@@ -89,15 +89,17 @@ export const dashboardStatePayloadValidator = v.object({
 });
 
 export const dashboardStateRecordValidator = v.object({
-  _id: v.id('dashboardState'),
+  _id: v.id('states'),
   _creationTime: v.number(),
   key: v.string(),
   payload: dashboardStatePayloadValidator,
+  updatedAt: v.number(),
 });
 
-export const adminCredentialValidator = v.object({
-  _id: v.id('adminCredentials'),
+export const credentialRecordValidator = v.object({
+  _id: v.id('credentials'),
   _creationTime: v.number(),
+  key: v.string(),
   login: v.string(),
   passwordHash: v.string(),
   passwordSalt: v.string(),
@@ -105,12 +107,31 @@ export const adminCredentialValidator = v.object({
   updatedAt: v.number(),
 });
 
-export const adminSessionValidator = v.object({
-  _id: v.id('adminSessions'),
+export const sessionRecordDbValidator = v.object({
+  _id: v.id('sessions'),
   _creationTime: v.number(),
-  credentialId: v.id('adminCredentials'),
+  credentialId: v.id('credentials'),
   tokenHash: v.string(),
   expiresAt: v.number(),
   createdAt: v.number(),
   lastSeenAt: v.number(),
 });
+
+export const bootstrapStatusValidator = v.object({
+  hasCredentials: v.boolean(),
+});
+
+export const authResultValidator = v.object({
+  sessionId: v.id('sessions'),
+  sessionToken: v.string(),
+  login: v.string(),
+});
+
+export const validatedSessionValidator = v.union(
+  v.object({
+    credentialId: v.id('credentials'),
+    login: v.string(),
+    expiresAt: v.number(),
+  }),
+  v.null(),
+);

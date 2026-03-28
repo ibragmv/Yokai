@@ -4,19 +4,23 @@ import { v } from 'convex/values';
 import { dashboardStatePayloadValidator } from './validators';
 
 export default defineSchema({
-  dashboardState: defineTable({
+  states: defineTable({
     key: v.string(),
     payload: dashboardStatePayloadValidator,
+    updatedAt: v.number(),
   }).index('by_key', ['key']),
-  adminCredentials: defineTable({
+  credentials: defineTable({
+    key: v.string(),
     login: v.string(),
     passwordHash: v.string(),
     passwordSalt: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_login', ['login']),
-  adminSessions: defineTable({
-    credentialId: v.id('adminCredentials'),
+  })
+    .index('by_key', ['key'])
+    .index('by_login', ['login']),
+  sessions: defineTable({
+    credentialId: v.id('credentials'),
     tokenHash: v.string(),
     expiresAt: v.number(),
     createdAt: v.number(),

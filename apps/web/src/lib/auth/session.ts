@@ -11,15 +11,15 @@ const SESSION_COOKIE_NAME = 'yokai_admin_session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 type SessionCookiePayload = {
-  sessionId: Id<'adminSessions'>;
+  sessionId: Id<'sessions'>;
   sessionToken: string;
 };
 
 export type AdminSession = {
-  credentialId: Id<'adminCredentials'>;
+  credentialId: Id<'credentials'>;
   login: string;
   expiresAt: number;
-  sessionId: Id<'adminSessions'>;
+  sessionId: Id<'sessions'>;
 };
 
 function encodeCookieValue(payload: SessionCookiePayload) {

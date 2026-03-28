@@ -33,7 +33,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <h1>{setupMode ? 'Create the first admin' : 'Sign in to Yokai'}</h1>
           <p className="state-copy">
             {setupMode
-              ? 'Admin credentials are stored in Convex and passwords are saved as salted hashes.'
+              ? 'Access credentials are stored in Convex and passwords are saved as salted hashes.'
               : 'The control room is now protected. Only an authenticated admin session can open the dashboard or its API routes.'}
           </p>
         </div>

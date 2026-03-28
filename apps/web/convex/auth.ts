@@ -1,9 +1,15 @@
 import { ConvexError, v } from 'convex/values';
 
 import { mutation, query } from './_generated/server';
+import {
+  authResultValidator,
+  bootstrapStatusValidator,
+  validatedSessionValidator,
+} from './validators';
 
 const PASSWORD_ITERATIONS = 120_000;
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const PRIMARY_CREDENTIAL_KEY = 'primary';
 
 function normalizeLogin(login: string) {
   return login.trim().toLowerCase();
@@ -69,12 +75,13 @@ function assertCredentialInput(login: string, password: string) {
 
 export const bootstrapStatus = query({
   args: {},
-  returns: v.object({
-    hasCredentials: v.boolean(),
-  }),
+  returns: bootstrapStatusValidator,
   handler: async (ctx) => {
-    const firstCredential = await ctx.db.query('adminCredentials').first();
-    return { hasCredentials: Boolean(firstCredential) };
+    const credential = await ctx.db
+      .query('credentials')
+      .withIndex('by_key', (q) => q.eq('key', PRIMARY_CREDENTIAL_KEY))
+      .unique();
+    return { hasCredentials: Boolean(credential) };
   },
 });
 
@@ -83,41 +90,42 @@ export const setupAdmin = mutation({
     login: v.string(),
     password: v.string(),
   },
-  returns: v.object({
-    sessionId: v.id('adminSessions'),
-    sessionToken: v.string(),
-    login: v.string(),
-  }),
+  returns: authResultValidator,
   handler: async (ctx, args) => {
     const login = normalizeLogin(args.login);
     assertCredentialInput(login, args.password);
 
-    const firstCredential = await ctx.db.query('adminCredentials').first();
-    if (firstCredential) {
+    const existingCredential = await ctx.db
+      .query('credentials')
+      .withIndex('by_key', (q) => q.eq('key', PRIMARY_CREDENTIAL_KEY))
+      .unique();
+    if (existingCredential) {
       throw new ConvexError({
         code: 'ADMIN_EXISTS',
         message: 'Admin credentials have already been configured.',
       });
     }
 
+    const now = Date.now();
     const passwordSalt = createRandomSecret(16);
     const passwordHash = await hashPassword(args.password, passwordSalt);
-    const credentialId = await ctx.db.insert('adminCredentials', {
+    const credentialId = await ctx.db.insert('credentials', {
+      key: PRIMARY_CREDENTIAL_KEY,
       login,
       passwordHash,
       passwordSalt,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
     });
 
     const sessionToken = createRandomSecret(32);
     const tokenHash = await sha256Base64Url(sessionToken);
-    const sessionId = await ctx.db.insert('adminSessions', {
+    const sessionId = await ctx.db.insert('sessions', {
       credentialId,
       tokenHash,
-      expiresAt: Date.now() + SESSION_TTL_MS,
-      createdAt: Date.now(),
-      lastSeenAt: Date.now(),
+      expiresAt: now + SESSION_TTL_MS,
+      createdAt: now,
+      lastSeenAt: now,
     });
 
     return {
@@ -133,15 +141,11 @@ export const login = mutation({
     login: v.string(),
     password: v.string(),
   },
-  returns: v.object({
-    sessionId: v.id('adminSessions'),
-    sessionToken: v.string(),
-    login: v.string(),
-  }),
+  returns: authResultValidator,
   handler: async (ctx, args) => {
     const login = normalizeLogin(args.login);
     const credential = await ctx.db
-      .query('adminCredentials')
+      .query('credentials')
       .withIndex('by_login', (q) => q.eq('login', login))
       .unique();
 
@@ -162,12 +166,13 @@ export const login = mutation({
 
     const sessionToken = createRandomSecret(32);
     const tokenHash = await sha256Base64Url(sessionToken);
-    const sessionId = await ctx.db.insert('adminSessions', {
+    const now = Date.now();
+    const sessionId = await ctx.db.insert('sessions', {
       credentialId: credential._id,
       tokenHash,
-      expiresAt: Date.now() + SESSION_TTL_MS,
-      createdAt: Date.now(),
-      lastSeenAt: Date.now(),
+      expiresAt: now + SESSION_TTL_MS,
+      createdAt: now,
+      lastSeenAt: now,
     });
 
     return {
@@ -180,20 +185,14 @@ export const login = mutation({
 
 export const validateSession = mutation({
   args: {
-    sessionId: v.id('adminSessions'),
+    sessionId: v.id('sessions'),
     sessionToken: v.string(),
   },
-  returns: v.union(
-    v.object({
-      credentialId: v.id('adminCredentials'),
-      login: v.string(),
-      expiresAt: v.number(),
-    }),
-    v.null(),
-  ),
+  returns: validatedSessionValidator,
   handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.sessionId);
-    if (!session || session.expiresAt <= Date.now()) {
+    const session = await ctx.db.get('sessions', args.sessionId);
+    const now = Date.now();
+    if (!session || session.expiresAt <= now) {
       return null;
     }
 
@@ -202,13 +201,13 @@ export const validateSession = mutation({
       return null;
     }
 
-    const credential = await ctx.db.get(session.credentialId);
+    const credential = await ctx.db.get('credentials', session.credentialId);
     if (!credential) {
       return null;
     }
 
-    await ctx.db.patch(args.sessionId, {
-      lastSeenAt: Date.now(),
+    await ctx.db.patch('sessions', args.sessionId, {
+      lastSeenAt: now,
     });
 
     return {
@@ -221,13 +220,13 @@ export const validateSession = mutation({
 
 export const logout = mutation({
   args: {
-    sessionId: v.id('adminSessions'),
+    sessionId: v.id('sessions'),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.sessionId);
+    const session = await ctx.db.get('sessions', args.sessionId);
     if (session) {
-      await ctx.db.delete(args.sessionId);
+      await ctx.db.delete('sessions', args.sessionId);
     }
     return null;
   },

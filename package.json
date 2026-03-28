@@ -5,6 +5,11 @@
   "workspaces": ["apps/*"],
   "scripts": {
     "dev": "bun run --cwd apps/web dev",
+    "convex:dev": "bun run --cwd apps/web convex:dev",
+    "convex:sync:dev": "bun run --cwd apps/web convex:sync:dev",
+    "convex:deploy": "bun run --cwd apps/web convex:deploy",
+    "convex:logs:dev": "bun run --cwd apps/web convex:logs:dev",
+    "convex:logs:prod": "bun run --cwd apps/web convex:logs:prod",
     "build": "bun run --cwd apps/web build",
     "lint": "bun run --cwd apps/web lint",
     "typecheck": "bun run --cwd apps/web typecheck",

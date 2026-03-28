@@ -10,7 +10,7 @@ export const getState = query({
   returns: v.union(dashboardStateRecordValidator, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
-      .query('dashboardState')
+      .query('states')
       .withIndex('by_key', (q) => q.eq('key', args.key))
       .unique();
   },
@@ -24,20 +24,22 @@ export const upsertState = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const existing = await ctx.db
-      .query('dashboardState')
+      .query('states')
       .withIndex('by_key', (q) => q.eq('key', args.key))
       .unique();
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
+      await ctx.db.patch('states', existing._id, {
         payload: args.payload,
+        updatedAt: Date.now(),
       });
       return null;
     }
 
-    await ctx.db.insert('dashboardState', {
+    await ctx.db.insert('states', {
       key: args.key,
       payload: args.payload,
+      updatedAt: Date.now(),
     });
     return null;
   },
