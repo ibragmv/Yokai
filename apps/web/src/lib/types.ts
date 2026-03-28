@@ -5,11 +5,13 @@ export type SettingsFormValues = {
   telegramBotToken: string;
   aiGatewayApiKey: string;
   vercelApiToken: string;
+  persistenceDatabaseUrl: string;
   vercelProjectId: string;
   vercelTeamId: string;
   allowedUserIds: string;
   allowedGroupIds: string;
   requireMention: boolean;
+  autoRecreateSandbox: boolean;
   timeoutSeconds: number;
   defaultModel: string;
 };
@@ -30,10 +32,13 @@ export type SandboxRecord = {
   runtime: string;
   previewUrl: string | null;
   gatewayUrl: string | null;
+  sourceSnapshotId: string | null;
   activeCpuUsageMs: number | null;
   networkBytes: number | null;
   openClawVersion: string | null;
   errorMessage: string | null;
+  expiresAt: number | null;
+  lastSnapshotAt: number | null;
   startedAt: number;
   updatedAt: number;
 };

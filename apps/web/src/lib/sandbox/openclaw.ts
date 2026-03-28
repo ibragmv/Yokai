@@ -3,21 +3,84 @@ import 'server-only';
 import { Sandbox } from '@vercel/sandbox';
 
 import { buildOpenClawConfig, sandboxEnvironment } from '@/lib/openclaw/config';
+import {
+  deleteRemoteSnapshot,
+  loadStoredSnapshot,
+  saveStoredSnapshot,
+} from '@/lib/persistence/openclaw-snapshots';
 import { redactSecrets } from '@/lib/security/redaction';
+import { appendCommand, readDashboardState, updateDashboardState } from '@/lib/store';
 import type { CommandRecord, DashboardSettings, SandboxRecord, SessionRecord } from '@/lib/types';
 import { truncate } from '@/lib/utils';
 
 const OPENCLAW_ROOT = '/vercel/sandbox/openclaw';
+const DEFAULT_RUNTIME = 'node24';
+const SNAPSHOT_EXPIRATION_MS = 0;
+
+let lifecycleReconcile: Promise<void> | null = null;
+
+function getSandboxTimeoutMs(settings: DashboardSettings) {
+  return Math.max(settings.timeoutSeconds, 60) * 1000;
+}
+
+function getExpiresAt(startedAt: number, settings: DashboardSettings) {
+  return startedAt + getSandboxTimeoutMs(settings);
+}
+
+function getRolloverWindowMs(timeoutMs: number) {
+  return Math.min(60_000, Math.max(5_000, Math.floor(timeoutMs * 0.1)));
+}
+
+function createSystemCommand(
+  sandboxId: string,
+  command: string,
+  stdout: string,
+  startedAt = Date.now(),
+): CommandRecord {
+  return {
+    cmdId: `${command}-${startedAt}`,
+    sandboxId,
+    command,
+    args: [],
+    status: 'succeeded',
+    exitCode: 0,
+    stdout,
+    stderr: null,
+    startedAt,
+    finishedAt: startedAt,
+  };
+}
+
+function getNetworkBytes(sandbox: Sandbox) {
+  if (!sandbox.networkTransfer) {
+    return null;
+  }
+
+  return sandbox.networkTransfer.ingress + sandbox.networkTransfer.egress;
+}
 
 export async function createOpenClawSandbox(settings: DashboardSettings): Promise<{
   sandboxRecord: SandboxRecord;
-  installCommand: CommandRecord;
+  commands: CommandRecord[];
 }> {
-  const sandbox = await Sandbox.create({
-    runtime: 'node24',
-    ports: [18789],
-    env: sandboxEnvironment(settings),
-  });
+  const storedSnapshot = await loadStoredSnapshot(settings);
+  const timeout = getSandboxTimeoutMs(settings);
+  const sandbox = storedSnapshot
+    ? await Sandbox.create({
+        source: {
+          type: 'snapshot',
+          snapshotId: storedSnapshot.snapshotId,
+        },
+        ports: [18789],
+        timeout,
+        env: sandboxEnvironment(settings),
+      })
+    : await Sandbox.create({
+        runtime: DEFAULT_RUNTIME,
+        ports: [18789],
+        timeout,
+        env: sandboxEnvironment(settings),
+      });
 
   await sandbox.mkDir(OPENCLAW_ROOT);
   await sandbox.mkDir(`${OPENCLAW_ROOT}/state`);
@@ -29,20 +92,36 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
     },
   ]);
 
-  const installResult = await runTrackedCommand(sandbox, {
-    cmd: 'bash',
-    args: [
-      '-lc',
-      [
-        'export SHARP_IGNORE_GLOBAL_LIBVIPS=1',
-        'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-prompt --no-onboard',
-      ].join(' && '),
-    ],
-    settings,
-  });
+  const commands: CommandRecord[] = [];
 
-  if (installResult.status === 'failed') {
-    throw new Error(installResult.stderr || installResult.stdout || 'OpenClaw installation failed');
+  if (!storedSnapshot) {
+    const installResult = await runTrackedCommand(sandbox, {
+      cmd: 'bash',
+      args: [
+        '-lc',
+        [
+          'export SHARP_IGNORE_GLOBAL_LIBVIPS=1',
+          'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-prompt --no-onboard',
+        ].join(' && '),
+      ],
+      settings,
+    });
+
+    commands.push(installResult);
+
+    if (installResult.status === 'failed') {
+      throw new Error(
+        installResult.stderr || installResult.stdout || 'OpenClaw installation failed',
+      );
+    }
+  } else {
+    commands.push(
+      createSystemCommand(
+        sandbox.sandboxId,
+        'system:restore-snapshot',
+        `Restored sandbox from snapshot ${storedSnapshot.snapshotId}.`,
+      ),
+    );
   }
 
   await runTrackedCommand(sandbox, {
@@ -61,24 +140,26 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
 
   const version = await sandbox.runCommand('bash', ['-lc', 'openclaw --version']);
   const previewUrl = sandbox.domain(18789);
+  const startedAt = Date.now();
 
   return {
     sandboxRecord: {
       sandboxId: sandbox.sandboxId,
       status: 'running',
-      runtime: 'node24',
+      runtime: DEFAULT_RUNTIME,
       previewUrl,
       gatewayUrl: previewUrl,
+      sourceSnapshotId: sandbox.sourceSnapshotId ?? storedSnapshot?.snapshotId ?? null,
       activeCpuUsageMs: sandbox.activeCpuUsageMs ?? null,
-      networkBytes:
-        (sandbox as Sandbox & { networkUsage?: { totalBytes?: number } }).networkUsage
-          ?.totalBytes ?? null,
+      networkBytes: getNetworkBytes(sandbox),
       openClawVersion: (await version.stdout()).trim() || null,
       errorMessage: null,
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
+      expiresAt: getExpiresAt(startedAt, settings),
+      lastSnapshotAt: storedSnapshot?.updatedAt ?? null,
+      startedAt,
+      updatedAt: startedAt,
     },
-    installCommand: installResult,
+    commands,
   };
 }
 
@@ -186,6 +267,7 @@ export async function syncOpenClawSessions(
         contextTokens: typeof session.contextTokens === 'number' ? session.contextTokens : null,
       }))
     : [];
+  const storedSnapshot = await loadStoredSnapshot(settings);
 
   return {
     sandbox: {
@@ -194,13 +276,14 @@ export async function syncOpenClawSessions(
       runtime: 'node24',
       previewUrl: sandbox.domain(18789),
       gatewayUrl: sandbox.domain(18789),
+      sourceSnapshotId: sandbox.sourceSnapshotId ?? null,
       activeCpuUsageMs: sandbox.activeCpuUsageMs ?? null,
-      networkBytes:
-        (sandbox as Sandbox & { networkUsage?: { totalBytes?: number } }).networkUsage
-          ?.totalBytes ?? null,
+      networkBytes: getNetworkBytes(sandbox),
       openClawVersion: null,
       errorMessage: null,
       startedAt: sandbox.createdAt.getTime(),
+      expiresAt: sandbox.createdAt.getTime() + sandbox.timeout,
+      lastSnapshotAt: storedSnapshot?.updatedAt ?? null,
       updatedAt: Date.now(),
     },
     sessions,
@@ -208,7 +291,107 @@ export async function syncOpenClawSessions(
   };
 }
 
+export async function snapshotOpenClawSandbox(
+  sandboxId: string,
+  settings: DashboardSettings,
+): Promise<CommandRecord | null> {
+  if (!settings.persistenceDatabaseUrl.trim()) {
+    return null;
+  }
+
+  const previousSnapshot = await loadStoredSnapshot(settings);
+  const sandbox = await Sandbox.get({ sandboxId });
+  const startedAt = Date.now();
+  const snapshot = await sandbox.snapshot({ expiration: SNAPSHOT_EXPIRATION_MS });
+  await saveStoredSnapshot(settings, snapshot);
+
+  if (previousSnapshot && previousSnapshot.snapshotId !== snapshot.snapshotId) {
+    await deleteRemoteSnapshot(previousSnapshot.snapshotId);
+  }
+
+  return createSystemCommand(
+    sandboxId,
+    'system:create-snapshot',
+    `Stored snapshot ${snapshot.snapshotId} in PostgreSQL.`,
+    startedAt,
+  );
+}
+
 export async function stopOpenClawSandbox(sandboxId: string) {
   const sandbox = await Sandbox.get({ sandboxId });
   await sandbox.stop();
+}
+
+export async function reconcileOpenClawSandboxLifecycle() {
+  if (lifecycleReconcile) {
+    await lifecycleReconcile;
+    return;
+  }
+
+  lifecycleReconcile = (async () => {
+    try {
+      const state = await readDashboardState();
+      if (
+        !state.sandbox ||
+        state.sandbox.status !== 'running' ||
+        !state.settings.autoRecreateSandbox
+      ) {
+        return;
+      }
+
+      const timeoutMs = getSandboxTimeoutMs(state.settings);
+      const rolloverAt = state.sandbox.startedAt + timeoutMs - getRolloverWindowMs(timeoutMs);
+      if (Date.now() < rolloverAt) {
+        return;
+      }
+
+      const previousSnapshot = await loadStoredSnapshot(state.settings);
+      let snapshotCommand: CommandRecord | null = null;
+
+      try {
+        snapshotCommand = await snapshotOpenClawSandbox(state.sandbox.sandboxId, state.settings);
+      } catch {}
+
+      const { sandboxRecord, commands } = await createOpenClawSandbox(state.settings);
+      const nextCommands = [...(snapshotCommand ? [snapshotCommand] : []), ...commands];
+
+      await updateDashboardState((current) => ({
+        ...current,
+        sandbox: {
+          ...sandboxRecord,
+          lastSnapshotAt: snapshotCommand?.finishedAt ?? sandboxRecord.lastSnapshotAt,
+        },
+        sessions: [],
+        commands: nextCommands.reduce(
+          (items, command) => appendCommand(items, command),
+          current.commands,
+        ),
+      }));
+
+      if (previousSnapshot && previousSnapshot.snapshotId !== sandboxRecord.sourceSnapshotId) {
+        await deleteRemoteSnapshot(previousSnapshot.snapshotId);
+      }
+    } catch (error) {
+      const state = await readDashboardState();
+      await updateDashboardState((current) => ({
+        ...current,
+        sandbox: current.sandbox
+          ? {
+              ...current.sandbox,
+              status: 'error',
+              errorMessage:
+                redactSecrets(
+                  error instanceof Error ? error.message : 'Sandbox rollover failed.',
+                  state.settings,
+                ) ?? 'Sandbox rollover failed.',
+              updatedAt: Date.now(),
+            }
+          : null,
+      }));
+    }
+  })().finally(() => {
+    lifecycleReconcile = null;
+  });
+
+  await lifecycleReconcile;
 }

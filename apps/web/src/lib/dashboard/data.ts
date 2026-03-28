@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { loadAvailableModels } from '@/lib/gateway/usage';
+import { reconcileOpenClawSandboxLifecycle } from '@/lib/sandbox/openclaw';
 import { readDashboardState } from '@/lib/store';
 import type { DashboardPayload, DashboardPublicSettings, DashboardSettings } from '@/lib/types';
 import { maskSecret } from '@/lib/utils';
@@ -16,11 +17,13 @@ function sanitizeSettings(settings: DashboardSettings): DashboardPublicSettings 
     telegramBotToken: maskSecret(settings.telegramBotToken),
     aiGatewayApiKey: maskSecret(settings.aiGatewayApiKey),
     vercelApiToken: maskSecret(settings.vercelApiToken),
+    persistenceDatabaseUrl: maskSecret(settings.persistenceDatabaseUrl),
     gatewayAuthToken: maskSecret(settings.gatewayAuthToken),
   };
 }
 
 export async function loadDashboardPayload(): Promise<DashboardPayload> {
+  await reconcileOpenClawSandboxLifecycle();
   const state = await readDashboardState();
   const availableModels = await loadAvailableModels(state.settings.aiGatewayApiKey || undefined)
     .catch(() => [])

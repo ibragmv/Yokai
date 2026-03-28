@@ -32,6 +32,7 @@ const SECRET_SETTING_KEYS = [
   'aiGatewayApiKey',
   'vercelApiToken',
   'gatewayAuthToken',
+  'persistenceDatabaseUrl',
 ] as const;
 
 type SecretSettingKey = (typeof SECRET_SETTING_KEYS)[number];
@@ -59,11 +60,13 @@ function createDefaultState(): DashboardState {
       telegramBotToken: '',
       aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY ?? '',
       vercelApiToken: process.env.VERCEL_ACCESS_TOKEN ?? '',
+      persistenceDatabaseUrl: process.env.OPENCLAW_PERSISTENCE_DATABASE_URL ?? '',
       vercelProjectId: resolveVercelProjectId(),
       vercelTeamId: resolveVercelTeamId(),
       allowedUserIds: '',
       allowedGroupIds: '',
       requireMention: true,
+      autoRecreateSandbox: Boolean(process.env.OPENCLAW_PERSISTENCE_DATABASE_URL),
       timeoutSeconds: 900,
       defaultModel: 'vercel-ai-gateway/anthropic/claude-sonnet-4.6',
       gatewayAuthToken: randomUUID(),
@@ -85,6 +88,7 @@ function splitSettings(settings: DashboardSettings) {
       allowedUserIds: settings.allowedUserIds,
       allowedGroupIds: settings.allowedGroupIds,
       requireMention: settings.requireMention,
+      autoRecreateSandbox: settings.autoRecreateSandbox,
       timeoutSeconds: settings.timeoutSeconds,
       defaultModel: settings.defaultModel,
       updatedAt: settings.updatedAt,
@@ -94,6 +98,7 @@ function splitSettings(settings: DashboardSettings) {
       aiGatewayApiKey: settings.aiGatewayApiKey,
       vercelApiToken: settings.vercelApiToken,
       gatewayAuthToken: settings.gatewayAuthToken,
+      persistenceDatabaseUrl: settings.persistenceDatabaseUrl,
     },
   };
 }

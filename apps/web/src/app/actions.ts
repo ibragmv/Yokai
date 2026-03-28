@@ -8,6 +8,7 @@ import { loadDashboardPayload } from '@/lib/dashboard/data';
 import { fetchGatewayCredits } from '@/lib/gateway/usage';
 import {
   createOpenClawSandbox,
+  snapshotOpenClawSandbox,
   stopOpenClawSandbox,
   syncOpenClawSessions,
 } from '@/lib/sandbox/openclaw';
@@ -77,11 +78,16 @@ export async function saveSettingsAction(
       telegramBotToken: keepSecret(input.telegramBotToken, current.settings.telegramBotToken),
       aiGatewayApiKey: keepSecret(input.aiGatewayApiKey, current.settings.aiGatewayApiKey),
       vercelApiToken: keepSecret(input.vercelApiToken, current.settings.vercelApiToken),
+      persistenceDatabaseUrl: keepSecret(
+        input.persistenceDatabaseUrl,
+        current.settings.persistenceDatabaseUrl,
+      ),
       vercelProjectId: input.vercelProjectId,
       vercelTeamId: input.vercelTeamId,
       allowedUserIds: input.allowedUserIds,
       allowedGroupIds: input.allowedGroupIds,
       requireMention: input.requireMention,
+      autoRecreateSandbox: input.autoRecreateSandbox,
       timeoutSeconds: input.timeoutSeconds,
       defaultModel: input.defaultModel,
       gatewayAuthToken: state.settings.gatewayAuthToken || randomUUID(),
@@ -107,23 +113,37 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
 
   try {
     if (action === 'start') {
-      const { sandboxRecord, installCommand } = await createOpenClawSandbox(state.settings);
+      const { sandboxRecord, commands } = await createOpenClawSandbox(state.settings);
       await updateDashboardState((current) => ({
         ...current,
         sandbox: sandboxRecord,
         sessions: [],
-        commands: appendCommand(current.commands, installCommand),
+        commands: commands.reduce(
+          (items, command) => appendCommand(items, command),
+          current.commands,
+        ),
       }));
     }
 
     if (action === 'stop' && state.sandbox) {
-      await stopOpenClawSandbox(state.sandbox.sandboxId);
+      const snapshotCommand = await snapshotOpenClawSandbox(
+        state.sandbox.sandboxId,
+        state.settings,
+      );
+      if (!snapshotCommand) {
+        await stopOpenClawSandbox(state.sandbox.sandboxId);
+      }
       await updateDashboardState((current) => ({
         ...current,
+        commands: snapshotCommand
+          ? appendCommand(current.commands, snapshotCommand)
+          : current.commands,
         sandbox: current.sandbox
           ? {
               ...current.sandbox,
               status: 'stopped',
+              errorMessage: null,
+              lastSnapshotAt: snapshotCommand?.finishedAt ?? current.sandbox.lastSnapshotAt,
               updatedAt: Date.now(),
             }
           : null,

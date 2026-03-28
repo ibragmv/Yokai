@@ -6,6 +6,7 @@ Yokai is a private control room for running OpenClaw inside Vercel Sandbox. The 
 
 - boot, stop, and sync an OpenClaw sandbox
 - configure Telegram access, gateway credentials, default model, timeout, and Vercel project metadata
+- auto-roll a sandbox before its TTL expires and restore it from the latest persisted snapshot
 - bootstrap the first admin account from `/login`, then protect the dashboard with cookie-based sessions
 - show recent OpenClaw sessions, tracked sandbox commands, and usage snapshots
 - mask secrets in the UI and encrypt sensitive values before persisting them in Convex
@@ -60,6 +61,7 @@ VERCEL_OIDC_TOKEN=
 VERCEL_ACCESS_TOKEN=
 VERCEL_PROJECT_ID=
 VERCEL_TEAM_ID=
+OPENCLAW_PERSISTENCE_DATABASE_URL=
 ```
 
 Notes:
@@ -67,6 +69,7 @@ Notes:
 - `YOKAI_ENCRYPTION_KEY` is mandatory. Without it, Yokai cannot decrypt encrypted dashboard secrets from Convex.
 - `YOKAI_ALLOWED_ORIGINS` controls the allowed origins for Next.js Server Actions.
 - `AI_GATEWAY_API_KEY`, `VERCEL_ACCESS_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID` can be prefilled from env or later managed from the dashboard.
+- `OPENCLAW_PERSISTENCE_DATABASE_URL` can prefill the encrypted sandbox persistence URL and enables auto-recreate by default for newly added settings.
 - `VERCEL_OIDC_TOKEN` is only available from env and is forwarded into the sandbox when present.
 
 ## Local Development
@@ -120,6 +123,7 @@ bun run convex:logs:prod
 
 - the dashboard auto-refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint
 - `Start sandbox` creates a new Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`
+- when auto-recreate is enabled, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` in PostgreSQL, and boots the replacement sandbox from that snapshot
 - `Sync` fetches OpenClaw session data and appends runtime usage snapshots
 - recent command stdout/stderr is stored in Convex after secret redaction
 

@@ -13,6 +13,7 @@ export const settingsValidator = v.object({
   allowedUserIds: v.string(),
   allowedGroupIds: v.string(),
   requireMention: v.boolean(),
+  autoRecreateSandbox: v.boolean(),
   timeoutSeconds: v.number(),
   defaultModel: v.string(),
   updatedAt: v.union(v.number(), v.null()),
@@ -23,6 +24,7 @@ export const encryptedSettingsValidator = v.object({
   aiGatewayApiKey: encryptedFieldValidator,
   vercelApiToken: encryptedFieldValidator,
   gatewayAuthToken: encryptedFieldValidator,
+  persistenceDatabaseUrl: encryptedFieldValidator,
 });
 
 export const sandboxValidator = v.union(
@@ -38,10 +40,13 @@ export const sandboxValidator = v.union(
     runtime: v.string(),
     previewUrl: v.union(v.string(), v.null()),
     gatewayUrl: v.union(v.string(), v.null()),
+    sourceSnapshotId: v.union(v.string(), v.null()),
     activeCpuUsageMs: v.union(v.number(), v.null()),
     networkBytes: v.union(v.number(), v.null()),
     openClawVersion: v.union(v.string(), v.null()),
     errorMessage: v.union(v.string(), v.null()),
+    expiresAt: v.union(v.number(), v.null()),
+    lastSnapshotAt: v.union(v.number(), v.null()),
     startedAt: v.number(),
     updatedAt: v.number(),
   }),

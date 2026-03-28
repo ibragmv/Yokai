@@ -21,11 +21,13 @@ function createFormValues(payload: DashboardPayload): SettingsFormValues {
     telegramBotToken: payload.settings.telegramBotToken,
     aiGatewayApiKey: payload.settings.aiGatewayApiKey,
     vercelApiToken: payload.settings.vercelApiToken,
+    persistenceDatabaseUrl: payload.settings.persistenceDatabaseUrl,
     vercelProjectId: payload.settings.vercelProjectId,
     vercelTeamId: payload.settings.vercelTeamId,
     allowedUserIds: payload.settings.allowedUserIds,
     allowedGroupIds: payload.settings.allowedGroupIds,
     requireMention: payload.settings.requireMention,
+    autoRecreateSandbox: payload.settings.autoRecreateSandbox,
     timeoutSeconds: payload.settings.timeoutSeconds,
     defaultModel: payload.settings.defaultModel,
   };
@@ -285,6 +287,10 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                     <dd>{data.sandbox?.openClawVersion ?? 'Unknown version'}</dd>
                   </div>
                   <div>
+                    <dt>Expires</dt>
+                    <dd>{formatRelativeDate(data.sandbox?.expiresAt ?? null)}</dd>
+                  </div>
+                  <div>
                     <dt>CPU usage</dt>
                     <dd>
                       {typeof data.sandbox?.activeCpuUsageMs === 'number'
@@ -498,6 +504,20 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
 
                 <label className="checkbox-field">
                   <input
+                    checked={draft.autoRecreateSandbox}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        autoRecreateSandbox: event.target.checked,
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>Auto recreate sandbox before TTL expires</span>
+                </label>
+
+                <label className="checkbox-field">
+                  <input
                     checked={draft.requireMention}
                     onChange={(event) =>
                       setDraft((current) => ({
@@ -566,6 +586,22 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                     spellCheck={false}
                     type="password"
                     value={draft.vercelApiToken}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Supabase / PostgreSQL URL</span>
+                  <input
+                    autoComplete="off"
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        persistenceDatabaseUrl: event.target.value,
+                      }))
+                    }
+                    spellCheck={false}
+                    type="password"
+                    value={draft.persistenceDatabaseUrl}
                   />
                 </label>
 
