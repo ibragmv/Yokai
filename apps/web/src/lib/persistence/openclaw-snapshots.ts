@@ -37,6 +37,20 @@ function createClient(databaseUrl: string) {
   });
 }
 
+function isPersistenceConnectionError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return [
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'ETIMEDOUT',
+    'EAI_AGAIN',
+    'Connection terminated unexpectedly',
+  ].some((token) => error.message.includes(token));
+}
+
 async function ensureSnapshotTable(sql: Sql) {
   await sql.unsafe(`
     create table if not exists ${SNAPSHOT_TABLE} (
@@ -74,6 +88,12 @@ async function withSnapshotStore<T>(
   try {
     await ensureSnapshotTable(sql);
     return await handler(sql);
+  } catch (error) {
+    if (isPersistenceConnectionError(error)) {
+      return null;
+    }
+
+    throw error;
   } finally {
     await sql.end({ timeout: 1 });
   }
