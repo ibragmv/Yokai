@@ -40,15 +40,15 @@ The web app uses `apps/web/.env` for local development. Commit `apps/web/.env.ex
 cp apps/web/.env.example apps/web/.env
 ```
 
-Convex dev scripts are configured with `--env-file .env`, so syncing the development deployment updates `apps/web/.env` instead of recreating `apps/web/.env.local`.
+The checked-in example now points at the production Convex deployment so the app and Vercel stay aligned by default. If you need an isolated local workflow, override `apps/web/.env` with a dev deployment before running Convex dev commands.
 
 Required baseline variables:
 
 ```dotenv
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-CONVEX_DEPLOYMENT=
-NEXT_PUBLIC_CONVEX_URL=
-NEXT_PUBLIC_CONVEX_SITE_URL=
+CONVEX_DEPLOYMENT=prod:dependable-pelican-709
+NEXT_PUBLIC_CONVEX_URL=https://dependable-pelican-709.convex.cloud
+NEXT_PUBLIC_CONVEX_SITE_URL=https://dependable-pelican-709.convex.site
 ```
 
 Optional integrations:
@@ -57,8 +57,8 @@ Optional integrations:
 AI_GATEWAY_API_KEY=
 VERCEL_OIDC_TOKEN=
 VERCEL_ACCESS_TOKEN=
-VERCEL_PROJECT_ID=
-VERCEL_TEAM_ID=
+VERCEL_PROJECT_ID=prj_NhAwClETTl9nC2UvWtGVbOVcESn6
+VERCEL_TEAM_ID=team_HRFFX8T36KvZ1pobcUxFeAa9
 ```
 
 ## Local Development
@@ -79,7 +79,7 @@ bun run dev
 
 ## Convex Workflows
 
-Sync the current schema and functions to the development deployment:
+Sync the current schema and functions to a development deployment:
 
 ```bash
 bun run convex:sync:dev

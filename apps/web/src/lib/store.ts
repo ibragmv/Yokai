@@ -12,6 +12,7 @@ import type {
   SessionRecord,
   UsageSnapshot,
 } from '@/lib/types';
+import { resolveVercelProjectId, resolveVercelTeamId } from '@/lib/vercel/project';
 import { api } from '@convex/_generated/api';
 
 export type DashboardState = {
@@ -52,8 +53,8 @@ function createDefaultState(): DashboardState {
       telegramBotToken: '',
       aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY ?? '',
       vercelApiToken: process.env.VERCEL_ACCESS_TOKEN ?? '',
-      vercelProjectId: process.env.VERCEL_PROJECT_ID ?? '',
-      vercelTeamId: process.env.VERCEL_TEAM_ID ?? '',
+      vercelProjectId: resolveVercelProjectId(),
+      vercelTeamId: resolveVercelTeamId(),
       allowedUserIds: '',
       allowedGroupIds: '',
       requireMention: true,
