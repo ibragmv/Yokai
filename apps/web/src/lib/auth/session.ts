@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { fetchMutation } from 'convex/nextjs';
+import { fetchQuery } from 'convex/nextjs';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -75,11 +75,11 @@ export async function readAdminSession(): Promise<AdminSession | null> {
     return null;
   }
 
-  let session: Awaited<ReturnType<typeof fetchMutation<typeof api.auth.validateSession>>> | null =
+  let session: Awaited<ReturnType<typeof fetchQuery<typeof api.auth.validateSession>>> | null =
     null;
 
   try {
-    session = await fetchMutation(api.auth.validateSession, {
+    session = await fetchQuery(api.auth.validateSession, {
       sessionId: sessionCookie.sessionId,
       sessionToken: sessionCookie.sessionToken,
     });

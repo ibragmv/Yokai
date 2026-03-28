@@ -183,7 +183,7 @@ export const login = mutation({
   },
 });
 
-export const validateSession = mutation({
+export const validateSession = query({
   args: {
     sessionId: v.id('sessions'),
     sessionToken: v.string(),
@@ -205,10 +205,6 @@ export const validateSession = mutation({
     if (!credential) {
       return null;
     }
-
-    await ctx.db.patch('sessions', args.sessionId, {
-      lastSeenAt: now,
-    });
 
     return {
       credentialId: credential._id,
