@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { reconcileOpenClawSandboxLifecycle } from '@/lib/sandbox/openclaw';
@@ -32,14 +33,41 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const result = await reconcileOpenClawSandboxLifecycle();
+  const shouldWait = request.nextUrl.searchParams.get('wait') === '1';
+
+  if (shouldWait) {
+    const result = await reconcileOpenClawSandboxLifecycle();
+
+    return Response.json(
+      {
+        ok: true,
+        mode: 'sync',
+        result,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, no-store, max-age=0',
+        },
+      },
+    );
+  }
+
+  after(async () => {
+    try {
+      await reconcileOpenClawSandboxLifecycle();
+    } catch (error) {
+      console.error('Sandbox rollover failed.', error);
+    }
+  });
 
   return Response.json(
     {
       ok: true,
-      result,
+      mode: 'async',
+      message: 'Sandbox rollover scheduled.',
     },
     {
+      status: 202,
       headers: {
         'Cache-Control': 'private, no-store, max-age=0',
       },
