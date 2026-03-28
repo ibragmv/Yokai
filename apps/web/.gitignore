@@ -1,4 +1,6 @@
-
+# Environment files
 .env.local
+
+# Local app data
 .vercel
 .data

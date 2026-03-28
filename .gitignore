@@ -1,16 +1,27 @@
+# Dependencies
 node_modules
+
+# Build and cache artifacts
 .turbo
 .next
 dist
 coverage
+*.tsbuildinfo
+
+# Local app data
 .data
 .convex
 .vercel
+apps/web/.data
+
+# Logs
 *.log
-*.tsbuildinfo
+
+# Environment files
 .env
 .env.development.local
 .env.production.local
 .env.test.local
+
+# OS files
 .DS_Store
-apps/web/.data
