@@ -8,6 +8,7 @@ import { loadDashboardPayload } from '@/lib/dashboard/data';
 import { fetchGatewayCredits } from '@/lib/gateway/usage';
 import {
   createOpenClawSandbox,
+  isOpenClawSandboxRunning,
   snapshotOpenClawSandbox,
   stopOpenClawSandbox,
   syncOpenClawSessions,
@@ -100,7 +101,11 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
   const state = await readDashboardState();
 
   if (action === 'start' && state.sandbox?.status === 'running') {
-    return getResult(true, 'Sandbox is already running.');
+    const isRunning = await isOpenClawSandboxRunning(state.sandbox.sandboxId);
+
+    if (isRunning) {
+      return getResult(true, 'Sandbox is already running.');
+    }
   }
 
   if (!state.sandbox && action !== 'start') {
@@ -119,6 +124,10 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
           current.commands,
         ),
       }));
+
+      if (sandboxRecord.status === 'error') {
+        return getResult(false, sandboxRecord.errorMessage ?? 'Sandbox failed to become ready.');
+      }
     }
 
     if (action === 'stop' && state.sandbox) {
@@ -161,6 +170,10 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
           recordedAt: Date.now(),
         }),
       }));
+
+      if (synced.sandbox.status !== 'running') {
+        return getResult(false, synced.sandbox.errorMessage ?? 'Sandbox is no longer running.');
+      }
     }
 
     await recordGatewayCredits();
