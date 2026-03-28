@@ -1,22 +1,22 @@
 # Yokai
 
-Yokai is a private control room for operating OpenClaw inside Vercel Sandbox. The app uses Next.js App Router for the admin UI and Convex as the control-plane backend for persisted state, credentials, and live operational data.
+Yokai is a private control room for running OpenClaw inside Vercel Sandbox. The UI is built with Next.js App Router, while Convex stores admin credentials, dashboard state, session data, command history, and usage snapshots.
 
 ## What It Does
 
-- boots and stops an OpenClaw sandbox
-- stores dashboard state in Convex under the `states` table
-- protects the control room with admin credentials and session cookies
-- tracks sandbox sessions, recent commands, and gateway usage snapshots
-- exposes a small authenticated overview API for live dashboard refreshes
+- boot, stop, and sync an OpenClaw sandbox
+- configure Telegram access, gateway credentials, default model, timeout, and Vercel project metadata
+- bootstrap the first admin account from `/login`, then protect the dashboard with cookie-based sessions
+- show recent OpenClaw sessions, tracked sandbox commands, and usage snapshots
+- mask secrets in the UI and encrypt sensitive values before persisting them in Convex
 
 ## Stack
 
+- Bun workspaces
 - Next.js 16 App Router
 - React 19
 - Convex
 - Vercel Sandbox
-- Bun workspaces
 - Biome
 
 ## Project Layout
@@ -25,88 +25,110 @@ Yokai is a private control room for operating OpenClaw inside Vercel Sandbox. Th
 .
 ├── apps/web
 │   ├── src/app            # App Router pages, route handlers, server actions
-│   ├── src/components     # Client UI
-│   ├── src/lib            # Server-side dashboard, auth, gateway, sandbox logic
-│   └── convex             # Schema, validators, queries, mutations
-├── package.json           # Workspace scripts
+│   ├── src/components     # Dashboard UI
+│   ├── src/lib            # Auth, store, sandbox, gateway, security logic
+│   ├── convex             # Convex schema, validators, queries, mutations
+│   └── .env.example       # Local environment template
+├── package.json           # Workspace-level scripts
 └── README.md
 ```
 
 ## Environment
 
-The web app uses `apps/web/.env` for local development. Commit `apps/web/.env.example`, keep `apps/web/.env` out of git.
+Create a local env file:
 
 ```bash
 cp apps/web/.env.example apps/web/.env
 ```
 
-The checked-in example now points at the production Convex deployment so the app and Vercel stay aligned by default. If you need an isolated local workflow, override `apps/web/.env` with a dev deployment before running Convex dev commands.
-
-Required baseline variables:
+Minimum required variables:
 
 ```dotenv
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-CONVEX_DEPLOYMENT=prod:dependable-pelican-709
-NEXT_PUBLIC_CONVEX_URL=https://dependable-pelican-709.convex.cloud
-NEXT_PUBLIC_CONVEX_SITE_URL=https://dependable-pelican-709.convex.site
+CONVEX_DEPLOYMENT=
+NEXT_PUBLIC_CONVEX_URL=
+NEXT_PUBLIC_CONVEX_SITE_URL=
+YOKAI_ENCRYPTION_KEY=
 ```
 
-Optional integrations:
+Additional variables used by the app:
 
 ```dotenv
+YOKAI_ALLOWED_ORIGINS=
 AI_GATEWAY_API_KEY=
 VERCEL_OIDC_TOKEN=
 VERCEL_ACCESS_TOKEN=
-VERCEL_PROJECT_ID=prj_NhAwClETTl9nC2UvWtGVbOVcESn6
-VERCEL_TEAM_ID=team_HRFFX8T36KvZ1pobcUxFeAa9
+VERCEL_PROJECT_ID=
+VERCEL_TEAM_ID=
 ```
+
+Notes:
+
+- `YOKAI_ENCRYPTION_KEY` is mandatory. Without it, Yokai cannot decrypt encrypted dashboard secrets from Convex.
+- `YOKAI_ALLOWED_ORIGINS` controls the allowed origins for Next.js Server Actions.
+- `AI_GATEWAY_API_KEY`, `VERCEL_ACCESS_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID` can be prefilled from env or later managed from the dashboard.
+- `VERCEL_OIDC_TOKEN` is only available from env and is forwarded into the sandbox when present.
 
 ## Local Development
 
-Install dependencies:
+Install dependencies from the repo root:
 
 ```bash
 bun install
 ```
 
-Run the Next.js app:
-
-```bash
-bun run dev
-```
-
-`bun run dev` starts only the web app. Convex sync and deployment stay explicit so schema changes are intentional.
-
-## Convex Workflows
-
-Sync the current schema and functions to a development deployment:
+Sync the Convex schema and functions to your development deployment:
 
 ```bash
 bun run convex:sync:dev
 ```
 
-Deploy the current schema and functions to production:
+Start the web app:
 
 ```bash
-bun run convex:deploy
+bun run dev
 ```
 
-Inspect logs when needed:
+Open `http://localhost:3000/login`.
+
+If the project has no admin credentials yet, Yokai switches the login screen into bootstrap mode and lets you create the first admin user. After that, the dashboard and `/api/overview` require an authenticated admin session.
+
+## Scripts
+
+From the repo root:
 
 ```bash
+bun run dev
+bun run build
+bun run typecheck
+bun run lint
+bun run check
+bun run format
+```
+
+Convex workflows:
+
+```bash
+bun run convex:dev
+bun run convex:sync:dev
+bun run convex:deploy
 bun run convex:logs:dev
 bun run convex:logs:prod
 ```
 
-## Quality Checks
+## Dashboard Behavior
 
-```bash
-bun run check
-bun run typecheck
-```
+- the dashboard auto-refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint
+- `Start sandbox` creates a new Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`
+- `Sync` fetches OpenClaw session data and appends runtime usage snapshots
+- recent command stdout/stderr is stored in Convex after secret redaction
 
-## Notes
+## Persistence Model
 
-- the control room is built around Server Components for reads and Server Actions for mutations
-- the authenticated overview endpoint exists only for client-side live refreshes
-- secrets are redacted in the UI and encrypted before persisted dashboard state is written to Convex
+Convex stores three main data areas:
+
+- `states`: the persisted dashboard payload, including sandbox status, settings, sessions, commands, and usage snapshots
+- `credentials`: admin login and password hash metadata
+- `sessions`: active admin sessions used for cookie validation
+
+Sensitive settings such as bot tokens, gateway keys, and Vercel API tokens are encrypted before they are written to Convex.
