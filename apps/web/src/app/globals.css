@@ -249,6 +249,14 @@ select:focus-visible {
   color: var(--text-muted);
 }
 
+.stat-panel strong,
+.stack-row-meta strong,
+.status-meta strong,
+.data-grid dd,
+.mono {
+  font-variant-numeric: tabular-nums;
+}
+
 .brand-copy span,
 .eyebrow,
 .status-label {
@@ -337,6 +345,11 @@ select:focus-visible {
 
 .status-linkish {
   font-size: 0.96rem;
+}
+
+.status-copy {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .status-meta {
@@ -451,15 +464,26 @@ select:focus-visible {
 
 .content-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+  align-items: stretch;
+  min-height: 100%;
 }
 
 .settings-layout {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  min-height: 100%;
+}
+
+.activity-grid {
+  grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
 }
 
 .surface-card {
   border-radius: 28px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+  height: 100%;
 }
 
 .card-heading {
@@ -482,6 +506,31 @@ select:focus-visible {
   margin-top: 1rem;
   color: var(--accent);
   font-weight: 600;
+}
+
+.section-stack {
+  min-height: clamp(34rem, 68vh, 48rem);
+}
+
+.section-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.35rem;
+}
+
+.section-scroll::-webkit-scrollbar {
+  width: 0.72rem;
+}
+
+.section-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 0.18rem solid transparent;
+  background: rgba(145, 192, 255, 0.22);
+  background-clip: padding-box;
+}
+
+.section-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .stack-row,
@@ -666,6 +715,10 @@ select:focus-visible {
   .hero-facts {
     grid-template-columns: 1fr;
   }
+
+  .section-stack {
+    min-height: auto;
+  }
 }
 
 @media (max-width: 720px) {
@@ -706,6 +759,11 @@ select:focus-visible {
 
   .stack-row-meta {
     text-align: left;
+  }
+
+  .section-scroll {
+    overflow: visible;
+    padding-right: 0;
   }
 }
 

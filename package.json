@@ -12,8 +12,6 @@
     "convex:deploy": "bun run convex:deploy:prod",
     "convex:logs:dev": "bun run --cwd apps/web convex:logs:dev",
     "convex:logs:prod": "bun run --cwd apps/web convex:logs:prod",
-    "convex:migrate:snapshots:dev": "bun run --cwd apps/web convex:migrate:snapshots:dev",
-    "convex:migrate:snapshots:prod": "bun run --cwd apps/web convex:migrate:snapshots:prod",
     "build": "bun run --cwd apps/web build",
     "lint": "bun run --cwd apps/web lint",
     "typecheck": "bun run --cwd apps/web typecheck",

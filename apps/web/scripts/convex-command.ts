@@ -9,13 +9,13 @@ const envLocalPath = join(rootDir, '.env.local');
 const convexBinPath = join(rootDir, 'node_modules', '.bin', 'convex');
 
 type Target = 'dev' | 'prod';
-type Mode = 'deploy' | 'logs' | 'migrate-snapshots' | 'sync' | 'watch';
+type Mode = 'deploy' | 'logs' | 'sync' | 'watch';
 
 const [, , targetArg, modeArg] = process.argv;
 
 if (!isTarget(targetArg) || !isMode(modeArg)) {
   console.error(
-    'Usage: bun run scripts/convex-command.ts <dev|prod> <sync|watch|deploy|logs|migrate-snapshots>',
+    'Usage: bun run scripts/convex-command.ts <dev|prod> <sync|watch|deploy|logs>',
   );
   process.exit(1);
 }
@@ -27,13 +27,7 @@ function isTarget(value: string | undefined): value is Target {
 }
 
 function isMode(value: string | undefined): value is Mode {
-  return (
-    value === 'deploy' ||
-    value === 'logs' ||
-    value === 'migrate-snapshots' ||
-    value === 'sync' ||
-    value === 'watch'
-  );
+  return value === 'deploy' || value === 'logs' || value === 'sync' || value === 'watch';
 }
 
 function parseEnvFile(filePath: string) {
@@ -172,21 +166,6 @@ function getConvexArgs(target: Target, mode: Mode, tempEnvPath: string) {
 
   if (mode === 'logs') {
     return target === 'prod' ? ['logs', '--prod'] : ['logs'];
-  }
-
-  if (mode === 'migrate-snapshots') {
-    return target === 'prod'
-      ? [
-          'run',
-          'snapshots:migrateLegacyFromState',
-          '{"stateKey":"primary","snapshotKey":"primary"}',
-          '--prod',
-        ]
-      : [
-          'run',
-          'snapshots:migrateLegacyFromState',
-          '{"stateKey":"primary","snapshotKey":"primary"}',
-        ];
   }
 
   throw new Error(`Unsupported Convex mode: ${mode}`);

@@ -35,8 +35,6 @@ export const snapshotValueValidator = v.object({
   updatedAt: v.number(),
 });
 
-export const storedSnapshotValidator = v.union(snapshotValueValidator, v.null());
-
 export const sandboxOperationLeaseValidator = v.object({
   owner: v.string(),
   type: v.union(v.literal('start'), v.literal('stop'), v.literal('sync'), v.literal('reconcile')),
@@ -68,7 +66,6 @@ export const sandboxValidator = v.union(
     ),
     runtime: v.string(),
     gatewayUrl: v.union(v.string(), v.null()),
-    previewUrl: v.optional(v.union(v.string(), v.null())),
     sourceSnapshotId: v.optional(v.union(v.string(), v.null())),
     activeCpuUsageMs: v.union(v.number(), v.null()),
     networkBytes: v.union(v.number(), v.null()),
@@ -118,9 +115,6 @@ export const dashboardStatePayloadValidator = v.object({
   encryptedSettings: encryptedSettingsValidator,
   sandbox: sandboxValidator,
   operationLease: v.optional(v.union(sandboxOperationLeaseValidator, v.null())),
-  // Legacy compatibility for older `states` rows before snapshot data moved
-  // into the dedicated `snapshots` table.
-  storedSnapshot: v.optional(storedSnapshotValidator),
   sessions: v.array(sessionRecordValidator),
   commands: v.array(commandRecordValidator),
   usage: v.array(usageSnapshotValidator),

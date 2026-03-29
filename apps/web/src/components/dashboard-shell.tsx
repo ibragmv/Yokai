@@ -1,19 +1,32 @@
 'use client';
 
-import { useEffect, useEffectEvent, useState, useTransition } from 'react';
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useEffectEvent,
+  useState,
+  useTransition,
+} from 'react';
 
 import { runSandboxAction, saveSettingsAction } from '@/app/actions';
 import { logoutAdminAction } from '@/app/login/actions';
 import { YokaiLogo } from '@/components/yokai-logo';
 import type {
+  CommandRecord,
   DashboardActionResult,
   DashboardPayload,
+  SessionRecord,
   SettingsFormValues,
   UsageSnapshot,
 } from '@/lib/types';
 import { formatRelativeDate } from '@/lib/utils';
 
 type Section = 'overview' | 'activity' | 'settings';
+type RuntimeFact = {
+  label: string;
+  value: string;
+};
 
 const SECTION_LABELS: Record<Section, string> = {
   overview: 'Overview',
@@ -55,11 +68,11 @@ function formatBytes(value: number | null) {
   }
 
   if (value < 1024) {
-    return `${value} B`;
+    return `${value.toLocaleString()} B`;
   }
 
   if (value < 1024 * 1024) {
-    return `${Math.round(value / 1024)} KB`;
+    return `${Math.round(value / 1024).toLocaleString()} KB`;
   }
 
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
@@ -74,11 +87,12 @@ function formatCpu(value: number | null) {
 }
 
 function formatUsageValue(snapshot: UsageSnapshot) {
-  if (snapshot.source === 'ai-gateway') {
-    return snapshot.creditsRemaining ?? snapshot.creditsUsed ?? 0;
-  }
+  const rawValue =
+    snapshot.source === 'ai-gateway'
+      ? (snapshot.creditsRemaining ?? snapshot.creditsUsed ?? 0)
+      : (snapshot.cpuMs ?? 0);
 
-  return snapshot.cpuMs ?? 0;
+  return rawValue.toLocaleString();
 }
 
 function formatSnapshotLabel(snapshotId: string | null | undefined) {
@@ -111,6 +125,437 @@ function parseSectionHash(hash: string): Section | null {
   return value === 'overview' || value === 'activity' || value === 'settings' ? value : null;
 }
 
+function OverviewSection({
+  gatewayUrl,
+  runtimeFacts,
+  usage,
+}: {
+  gatewayUrl: string | null;
+  runtimeFacts: RuntimeFact[];
+  usage: UsageSnapshot[];
+}) {
+  return (
+    <section
+      aria-labelledby="tab-overview"
+      className="content-grid"
+      id="panel-overview"
+      role="tabpanel"
+    >
+      <article className="surface-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Runtime</p>
+            <h2>Sandbox Envelope</h2>
+          </div>
+        </div>
+
+        <dl className="data-grid">
+          {runtimeFacts.map((fact) => (
+            <div key={fact.label}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        {gatewayUrl ? (
+          <a className="inline-link" href={gatewayUrl} rel="noreferrer" target="_blank">
+            Open Gateway
+          </a>
+        ) : null}
+      </article>
+
+      <article className="surface-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Usage</p>
+            <h2>Recent Samples</h2>
+          </div>
+        </div>
+
+        <div className="stack-list">
+          {usage.length ? (
+            usage.slice(0, 6).map((snapshot) => (
+              <div className="stack-row" key={`${snapshot.source}-${snapshot.recordedAt}`}>
+                <div className="stack-primary">
+                  <strong>{snapshot.source === 'ai-gateway' ? 'AI Gateway' : 'Sandbox'}</strong>
+                  <p>{formatRelativeDate(snapshot.recordedAt)}</p>
+                </div>
+                <div className="stack-row-meta">
+                  <strong>{formatUsageValue(snapshot)}</strong>
+                  <p>
+                    {snapshot.source === 'ai-gateway'
+                      ? 'credits remaining'
+                      : `${formatBytes(snapshot.networkBytes)} network`}
+                  </p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="empty-copy">No usage snapshots have been recorded yet.</p>
+          )}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function ActivitySection({
+  commands,
+  sessions,
+}: {
+  commands: CommandRecord[];
+  sessions: SessionRecord[];
+}) {
+  return (
+    <section
+      aria-labelledby="tab-activity"
+      className="content-grid activity-grid"
+      id="panel-activity"
+      role="tabpanel"
+    >
+      <article className="surface-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Sessions</p>
+            <h2>Tracked Agents</h2>
+          </div>
+        </div>
+
+        <div className="section-scroll">
+          <div className="stack-list">
+            {sessions.length ? (
+              sessions.map((session) => (
+                <div className="stack-row" key={session.sessionKey}>
+                  <div className="stack-primary">
+                    <strong className="mono">{session.sessionKey}</strong>
+                    <p>
+                      Agent {session.agentId} • {formatRelativeDate(session.updatedAt)}
+                    </p>
+                  </div>
+                  <div className="stack-row-meta">
+                    <strong>{session.model ?? 'Unknown model'}</strong>
+                    <p>{formatTokenCount(session.totalTokens)} total</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-copy">Run a sync to load the latest session list.</p>
+            )}
+          </div>
+        </div>
+      </article>
+
+      <article className="surface-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Commands</p>
+            <h2>Runtime Output</h2>
+          </div>
+        </div>
+
+        <div className="section-scroll">
+          <div className="command-list">
+            {commands.length ? (
+              commands.map((command) => (
+                <article className="command-card" key={command.cmdId}>
+                  <div className="command-header">
+                    <div className="stack-primary">
+                      <strong className="mono">
+                        {command.command} {command.args.join(' ')}
+                      </strong>
+                      <p>{formatRelativeDate(command.startedAt)}</p>
+                    </div>
+                    <span className={`status-pill status-${command.status}`}>{command.status}</span>
+                  </div>
+
+                  {command.stdout ? <pre className="terminal-output">{command.stdout}</pre> : null}
+                  {command.stderr ? (
+                    <pre className="terminal-output terminal-error">{command.stderr}</pre>
+                  ) : null}
+
+                  <div className="footer-meta">
+                    <span>Exit code: {command.exitCode ?? 'running'}</span>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="empty-copy">Tracked commands appear after the next action.</p>
+            )}
+          </div>
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function SettingsSection({
+  data,
+  draft,
+  isDirty,
+  isPending,
+  setDraft,
+  submitSettings,
+}: {
+  data: DashboardPayload;
+  draft: SettingsFormValues;
+  isDirty: boolean;
+  isPending: boolean;
+  setDraft: Dispatch<SetStateAction<SettingsFormValues>>;
+  submitSettings: () => void;
+}) {
+  return (
+    <section
+      aria-labelledby="tab-settings"
+      className="settings-layout"
+      id="panel-settings"
+      role="tabpanel"
+    >
+      <article className="surface-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Access & Runtime</p>
+            <h2>Control Room Settings</h2>
+          </div>
+        </div>
+
+        <div className="form-grid">
+          <label className="field">
+            <span>Gateway Name</span>
+            <input
+              autoComplete="off"
+              name="displayName"
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, displayName: event.target.value }))
+              }
+              placeholder="Yokai Control Room…"
+              value={draft.displayName}
+            />
+          </label>
+
+          <label className="field">
+            <span>Allowed User IDs</span>
+            <input
+              autoComplete="off"
+              name="allowedUserIds"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  allowedUserIds: event.target.value,
+                }))
+              }
+              placeholder="123, 456…"
+              spellCheck={false}
+              value={draft.allowedUserIds}
+            />
+          </label>
+
+          <label className="field">
+            <span>Allowed Group IDs</span>
+            <input
+              autoComplete="off"
+              name="allowedGroupIds"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  allowedGroupIds: event.target.value,
+                }))
+              }
+              placeholder="-100123, -100456…"
+              spellCheck={false}
+              value={draft.allowedGroupIds}
+            />
+          </label>
+
+          <label className="field">
+            <span>Sandbox Timeout (Seconds)</span>
+            <input
+              inputMode="numeric"
+              min={60}
+              name="timeoutSeconds"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  timeoutSeconds: Number(event.target.value) || current.timeoutSeconds,
+                }))
+              }
+              type="number"
+              value={draft.timeoutSeconds}
+            />
+          </label>
+
+          <label className="checkbox-field">
+            <input
+              checked={draft.autoRecreateSandbox}
+              name="autoRecreateSandbox"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  autoRecreateSandbox: event.target.checked,
+                }))
+              }
+              type="checkbox"
+            />
+            <span>Auto recreate the sandbox before TTL expires</span>
+          </label>
+
+          <label className="checkbox-field">
+            <input
+              checked={draft.requireMention}
+              name="requireMention"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  requireMention: event.target.checked,
+                }))
+              }
+              type="checkbox"
+            />
+            <span>Require mentions inside allowlisted groups</span>
+          </label>
+        </div>
+      </article>
+
+      <article className="surface-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Gateway & Credentials</p>
+            <h2>Secrets and Routing</h2>
+          </div>
+        </div>
+
+        <div className="form-grid">
+          <label className="field">
+            <span>Default Model</span>
+            <input
+              autoComplete="off"
+              list="available-models"
+              name="defaultModel"
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, defaultModel: event.target.value }))
+              }
+              placeholder="vercel-ai-gateway/anthropic/…"
+              spellCheck={false}
+              value={draft.defaultModel}
+            />
+            <datalist id="available-models">
+              {data.availableModels.map((model) => (
+                <option key={model} value={model} />
+              ))}
+            </datalist>
+          </label>
+
+          <label className="field">
+            <span>Telegram Bot Token</span>
+            <input
+              autoComplete="off"
+              name="telegramBotToken"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  telegramBotToken: event.target.value,
+                }))
+              }
+              placeholder="Leave masked value to keep current token…"
+              spellCheck={false}
+              type="password"
+              value={draft.telegramBotToken}
+            />
+          </label>
+
+          <label className="field">
+            <span>Vercel AI Gateway API Key</span>
+            <input
+              autoComplete="off"
+              name="aiGatewayApiKey"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  aiGatewayApiKey: event.target.value,
+                }))
+              }
+              placeholder="Leave masked value to keep current key…"
+              spellCheck={false}
+              type="password"
+              value={draft.aiGatewayApiKey}
+            />
+          </label>
+
+          <label className="field">
+            <span>Vercel API Token</span>
+            <input
+              autoComplete="off"
+              name="vercelApiToken"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  vercelApiToken: event.target.value,
+                }))
+              }
+              placeholder="Leave masked value to keep current token…"
+              spellCheck={false}
+              type="password"
+              value={draft.vercelApiToken}
+            />
+          </label>
+
+          <label className="field">
+            <span>Project ID</span>
+            <input
+              autoComplete="off"
+              name="vercelProjectId"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  vercelProjectId: event.target.value,
+                }))
+              }
+              placeholder="prj_…"
+              spellCheck={false}
+              value={draft.vercelProjectId}
+            />
+          </label>
+
+          <label className="field">
+            <span>Team ID</span>
+            <input
+              autoComplete="off"
+              name="vercelTeamId"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  vercelTeamId: event.target.value,
+                }))
+              }
+              placeholder="team_…"
+              spellCheck={false}
+              value={draft.vercelTeamId}
+            />
+          </label>
+        </div>
+
+        <div className="settings-footer">
+          <div>
+            <strong>{isDirty ? 'Unsaved changes' : 'Settings saved'}</strong>
+            <p>
+              Last saved {formatRelativeDate(data.settings.updatedAt)}. Secrets remain masked in the
+              UI and encrypted at rest.
+            </p>
+          </div>
+          <button
+            className="primary-button"
+            disabled={isPending}
+            onClick={submitSettings}
+            type="button"
+          >
+            {isPending ? 'Saving…' : 'Save Settings'}
+          </button>
+        </div>
+      </article>
+    </section>
+  );
+}
+
 export function DashboardShell({ initialData }: { initialData: DashboardPayload }) {
   const [data, setData] = useState(initialData);
   const [draft, setDraft] = useState(() => createFormValues(initialData));
@@ -123,9 +568,10 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
   const allowlistedUsers = countCsvValues(draft.allowedUserIds);
   const allowlistedGroups = countCsvValues(draft.allowedGroupIds);
   const isRunning = data.sandbox?.status === 'running';
+  const savedTimeoutSeconds = data.settings.timeoutSeconds;
   const nextSnapshotAt =
     isRunning && data.sandbox?.expiresAt
-      ? data.sandbox.expiresAt - getSnapshotWindowMs(data.settings.timeoutSeconds)
+      ? data.sandbox.expiresAt - getSnapshotWindowMs(savedTimeoutSeconds)
       : null;
   const activeLease = data.operationLease;
 
@@ -194,6 +640,20 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
     return () => window.clearInterval(interval);
   }, [refreshLiveData]);
 
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isDirty]);
+
   function handleResult(result: DashboardActionResult, preserveDraft = false) {
     applyPayload(result.payload, { preserveDraft });
     setNotice(result.message);
@@ -255,13 +715,13 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
       detail: formatRelativeDate(data.storedSnapshot?.updatedAt ?? null),
     },
     {
-      label: 'Next Handoff',
+      label: 'Next Recovery Window',
       value: formatRelativeDate(nextSnapshotAt),
-      detail: `${Math.max(draft.timeoutSeconds, 60)} second TTL`,
+      detail: `${Math.max(savedTimeoutSeconds, 60).toLocaleString()} second TTL`,
     },
   ];
 
-  const runtimeFacts = [
+  const runtimeFacts: RuntimeFact[] = [
     {
       label: 'Gateway URL',
       value: data.sandbox?.gatewayUrl ?? 'Not running',
@@ -310,8 +770,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
               <p className="eyebrow">Single sandbox orchestration</p>
               <h1>{data.settings.displayName}</h1>
               <p className="hero-text">
-                One control room for the active OpenClaw runtime, rollover state, session sync, and
-                the snapshot handoff that keeps the sandbox recoverable.
+                Watch the live OpenClaw runtime, recent agents, and the latest recovery snapshot
+                from one control room.
               </p>
             </div>
 
@@ -330,7 +790,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                 <dt>Lease</dt>
                 <dd>
                   {activeLease
-                    ? `${activeLease.type} in progress until ${formatRelativeDate(activeLease.expiresAt)}`
+                    ? `${activeLease.type} until ${formatRelativeDate(activeLease.expiresAt)}`
                     : 'No background lock'}
                 </dd>
               </div>
@@ -343,11 +803,19 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
               <strong className="status-linkish mono">
                 {data.sandbox?.sandboxId ?? 'No sandbox allocated'}
               </strong>
-              <p className="status-copy">
-                {isRunning
-                  ? `Auto rollover ${draft.autoRecreateSandbox ? 'is enabled' : 'is disabled'}. Next handoff ${formatRelativeDate(nextSnapshotAt)}.`
-                  : 'Start a sandbox to restore state from the latest stored snapshot when available.'}
-              </p>
+
+              <div className="status-copy">
+                {isRunning ? (
+                  <>
+                    <p>
+                      Auto rollover {data.settings.autoRecreateSandbox ? 'enabled' : 'disabled'}.
+                    </p>
+                    <p>Next recovery window {formatRelativeDate(nextSnapshotAt)}.</p>
+                  </>
+                ) : (
+                  <p>Start a sandbox to restore from the latest stored snapshot when available.</p>
+                )}
+              </div>
 
               <div className="status-meta">
                 <div>
@@ -395,13 +863,17 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
           </aside>
         </header>
 
-        <nav className="section-nav" aria-label="Dashboard sections">
+        <nav aria-label="Dashboard sections" className="section-nav">
           {(Object.keys(SECTION_LABELS) as Section[]).map((item) => (
             <button
+              aria-controls={`panel-${item}`}
+              aria-selected={section === item}
               className="segment"
               data-active={section === item}
+              id={`tab-${item}`}
               key={item}
               onClick={() => setSection(item)}
+              role="tab"
               type="button"
             >
               {SECTION_LABELS[item]}
@@ -410,7 +882,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
 
           <div className="toolbar-meta">
             <span>{isPending ? 'Working…' : 'Auto refresh every 15 seconds'}</span>
-            <span>{isDirty ? 'Local edits are preserved until save' : 'Settings are in sync'}</span>
+            <span>{isDirty ? 'Local edits stay in place until save' : 'Settings are in sync'}</span>
           </div>
         </nav>
 
@@ -436,396 +908,30 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
           ))}
         </div>
 
-        <section className="section-stack" id="dashboard-content">
+        <div className="section-stack" id="dashboard-content">
           {section === 'overview' ? (
-            <div className="content-grid">
-              <article className="surface-card">
-                <div className="card-heading">
-                  <div>
-                    <p className="eyebrow">Runtime</p>
-                    <h2>Sandbox Envelope</h2>
-                  </div>
-                </div>
-
-                <dl className="data-grid">
-                  {runtimeFacts.map((fact) => (
-                    <div key={fact.label}>
-                      <dt>{fact.label}</dt>
-                      <dd>{fact.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-
-                {data.sandbox?.gatewayUrl ? (
-                  <a
-                    className="inline-link"
-                    href={data.sandbox.gatewayUrl}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    Open Gateway
-                  </a>
-                ) : null}
-              </article>
-
-              <article className="surface-card">
-                <div className="card-heading">
-                  <div>
-                    <p className="eyebrow">Usage</p>
-                    <h2>Recent Samples</h2>
-                  </div>
-                </div>
-
-                <div className="stack-list">
-                  {data.usage.length ? (
-                    data.usage.slice(0, 6).map((snapshot) => (
-                      <div className="stack-row" key={`${snapshot.source}-${snapshot.recordedAt}`}>
-                        <div className="stack-primary">
-                          <strong>
-                            {snapshot.source === 'ai-gateway' ? 'AI Gateway' : 'Sandbox'}
-                          </strong>
-                          <p>{formatRelativeDate(snapshot.recordedAt)}</p>
-                        </div>
-                        <div className="stack-row-meta">
-                          <strong>{formatUsageValue(snapshot)}</strong>
-                          <p>
-                            {snapshot.source === 'ai-gateway'
-                              ? 'credits remaining'
-                              : `${formatBytes(snapshot.networkBytes)} network`}
-                          </p>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="empty-copy">No usage snapshots have been recorded yet.</p>
-                  )}
-                </div>
-              </article>
-            </div>
+            <OverviewSection
+              gatewayUrl={data.sandbox?.gatewayUrl ?? null}
+              runtimeFacts={runtimeFacts}
+              usage={data.usage}
+            />
           ) : null}
 
           {section === 'activity' ? (
-            <div className="content-grid">
-              <article className="surface-card">
-                <div className="card-heading">
-                  <div>
-                    <p className="eyebrow">Sessions</p>
-                    <h2>Tracked Agents</h2>
-                  </div>
-                </div>
-
-                <div className="stack-list">
-                  {data.sessions.length ? (
-                    data.sessions.map((session) => (
-                      <div className="stack-row" key={session.sessionKey}>
-                        <div className="stack-primary">
-                          <strong className="mono">{session.sessionKey}</strong>
-                          <p>
-                            Agent {session.agentId} • {formatRelativeDate(session.updatedAt)}
-                          </p>
-                        </div>
-                        <div className="stack-row-meta">
-                          <strong>{session.model ?? 'Unknown model'}</strong>
-                          <p>{formatTokenCount(session.totalTokens)} total</p>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="empty-copy">Run a sync to load the latest session list.</p>
-                  )}
-                </div>
-              </article>
-
-              <article className="surface-card">
-                <div className="card-heading">
-                  <div>
-                    <p className="eyebrow">Commands</p>
-                    <h2>Runtime Output</h2>
-                  </div>
-                </div>
-
-                <div className="command-list">
-                  {data.commands.length ? (
-                    data.commands.map((command) => (
-                      <article className="command-card" key={command.cmdId}>
-                        <div className="command-header">
-                          <div className="stack-primary">
-                            <strong className="mono">
-                              {command.command} {command.args.join(' ')}
-                            </strong>
-                            <p>{formatRelativeDate(command.startedAt)}</p>
-                          </div>
-                          <span className={`status-pill status-${command.status}`}>
-                            {command.status}
-                          </span>
-                        </div>
-
-                        {command.stdout ? (
-                          <pre className="terminal-output">{command.stdout}</pre>
-                        ) : null}
-                        {command.stderr ? (
-                          <pre className="terminal-output terminal-error">{command.stderr}</pre>
-                        ) : null}
-
-                        <div className="footer-meta">
-                          <span>Exit code: {command.exitCode ?? 'running'}</span>
-                        </div>
-                      </article>
-                    ))
-                  ) : (
-                    <p className="empty-copy">Tracked commands appear after the next action.</p>
-                  )}
-                </div>
-              </article>
-            </div>
+            <ActivitySection commands={data.commands} sessions={data.sessions} />
           ) : null}
 
           {section === 'settings' ? (
-            <div className="settings-layout">
-              <article className="surface-card">
-                <div className="card-heading">
-                  <div>
-                    <p className="eyebrow">Access & Runtime</p>
-                    <h2>Control Room Settings</h2>
-                  </div>
-                </div>
-
-                <div className="form-grid">
-                  <label className="field">
-                    <span>Gateway Name</span>
-                    <input
-                      autoComplete="off"
-                      name="displayName"
-                      onChange={(event) =>
-                        setDraft((current) => ({ ...current, displayName: event.target.value }))
-                      }
-                      placeholder="Yokai Control Room…"
-                      value={draft.displayName}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Allowed User IDs</span>
-                    <input
-                      autoComplete="off"
-                      name="allowedUserIds"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          allowedUserIds: event.target.value,
-                        }))
-                      }
-                      placeholder="123, 456…"
-                      spellCheck={false}
-                      value={draft.allowedUserIds}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Allowed Group IDs</span>
-                    <input
-                      autoComplete="off"
-                      name="allowedGroupIds"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          allowedGroupIds: event.target.value,
-                        }))
-                      }
-                      placeholder="-100123, -100456…"
-                      spellCheck={false}
-                      value={draft.allowedGroupIds}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Sandbox Timeout (Seconds)</span>
-                    <input
-                      inputMode="numeric"
-                      min={60}
-                      name="timeoutSeconds"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          timeoutSeconds: Number(event.target.value) || current.timeoutSeconds,
-                        }))
-                      }
-                      type="number"
-                      value={draft.timeoutSeconds}
-                    />
-                  </label>
-
-                  <label className="checkbox-field">
-                    <input
-                      checked={draft.autoRecreateSandbox}
-                      name="autoRecreateSandbox"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          autoRecreateSandbox: event.target.checked,
-                        }))
-                      }
-                      type="checkbox"
-                    />
-                    <span>Auto recreate the sandbox before TTL expires</span>
-                  </label>
-
-                  <label className="checkbox-field">
-                    <input
-                      checked={draft.requireMention}
-                      name="requireMention"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          requireMention: event.target.checked,
-                        }))
-                      }
-                      type="checkbox"
-                    />
-                    <span>Require mentions inside allowlisted groups</span>
-                  </label>
-                </div>
-              </article>
-
-              <article className="surface-card">
-                <div className="card-heading">
-                  <div>
-                    <p className="eyebrow">Gateway & Credentials</p>
-                    <h2>Secrets and Routing</h2>
-                  </div>
-                </div>
-
-                <div className="form-grid">
-                  <label className="field">
-                    <span>Default Model</span>
-                    <input
-                      autoComplete="off"
-                      list="available-models"
-                      name="defaultModel"
-                      onChange={(event) =>
-                        setDraft((current) => ({ ...current, defaultModel: event.target.value }))
-                      }
-                      placeholder="vercel-ai-gateway/anthropic/…"
-                      spellCheck={false}
-                      value={draft.defaultModel}
-                    />
-                    <datalist id="available-models">
-                      {data.availableModels.map((model) => (
-                        <option key={model} value={model} />
-                      ))}
-                    </datalist>
-                  </label>
-
-                  <label className="field">
-                    <span>Telegram Bot Token</span>
-                    <input
-                      autoComplete="off"
-                      name="telegramBotToken"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          telegramBotToken: event.target.value,
-                        }))
-                      }
-                      placeholder="Leave masked value to keep current token…"
-                      spellCheck={false}
-                      type="password"
-                      value={draft.telegramBotToken}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Vercel AI Gateway API Key</span>
-                    <input
-                      autoComplete="off"
-                      name="aiGatewayApiKey"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          aiGatewayApiKey: event.target.value,
-                        }))
-                      }
-                      placeholder="Leave masked value to keep current key…"
-                      spellCheck={false}
-                      type="password"
-                      value={draft.aiGatewayApiKey}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Vercel API Token</span>
-                    <input
-                      autoComplete="off"
-                      name="vercelApiToken"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          vercelApiToken: event.target.value,
-                        }))
-                      }
-                      placeholder="Leave masked value to keep current token…"
-                      spellCheck={false}
-                      type="password"
-                      value={draft.vercelApiToken}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Project ID</span>
-                    <input
-                      autoComplete="off"
-                      name="vercelProjectId"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          vercelProjectId: event.target.value,
-                        }))
-                      }
-                      placeholder="prj_…"
-                      spellCheck={false}
-                      value={draft.vercelProjectId}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Team ID</span>
-                    <input
-                      autoComplete="off"
-                      name="vercelTeamId"
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          vercelTeamId: event.target.value,
-                        }))
-                      }
-                      placeholder="team_…"
-                      spellCheck={false}
-                      value={draft.vercelTeamId}
-                    />
-                  </label>
-                </div>
-
-                <div className="settings-footer">
-                  <div>
-                    <strong>{isDirty ? 'Unsaved changes' : 'Settings saved'}</strong>
-                    <p>
-                      Last saved {formatRelativeDate(data.settings.updatedAt)}. Secrets remain
-                      masked in the UI and encrypted at rest.
-                    </p>
-                  </div>
-                  <button
-                    className="primary-button"
-                    disabled={isPending}
-                    onClick={submitSettings}
-                    type="button"
-                  >
-                    {isPending ? 'Saving…' : 'Save Settings'}
-                  </button>
-                </div>
-              </article>
-            </div>
+            <SettingsSection
+              data={data}
+              draft={draft}
+              isDirty={isDirty}
+              isPending={isPending}
+              setDraft={setDraft}
+              submitSettings={submitSettings}
+            />
           ) : null}
-        </section>
+        </div>
       </section>
     </main>
   );

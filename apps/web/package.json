@@ -11,8 +11,6 @@
     "convex:deploy": "bun run convex:deploy:prod",
     "convex:logs:dev": "bun run scripts/convex-command.ts dev logs",
     "convex:logs:prod": "bun run scripts/convex-command.ts prod logs",
-    "convex:migrate:snapshots:dev": "bun run scripts/convex-command.ts dev migrate-snapshots",
-    "convex:migrate:snapshots:prod": "bun run scripts/convex-command.ts prod migrate-snapshots",
     "build": "next build",
     "start": "next start",
     "lint": "biome check src convex/*.ts next.config.ts",

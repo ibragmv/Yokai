@@ -8,7 +8,6 @@ import type { StoredSnapshotRecord } from '@/lib/types';
 import { api } from '@convex/_generated/api';
 
 const SNAPSHOT_KEY = 'primary';
-const STATE_KEY = 'primary';
 
 function mapSnapshot(snapshot: Snapshot): StoredSnapshotRecord {
   return {
@@ -39,33 +38,9 @@ function mapStoredSnapshot(record: {
   };
 }
 
-async function migrateLegacyStoredSnapshot(): Promise<StoredSnapshotRecord | null> {
-  const state = await fetchQuery(api.dashboard.getState, { key: STATE_KEY });
-  const legacySnapshot = state?.payload.storedSnapshot ?? null;
-
-  if (!legacySnapshot) {
-    return null;
-  }
-
-  await fetchMutation(api.snapshots.upsert, {
-    key: SNAPSHOT_KEY,
-    snapshot: legacySnapshot,
-  });
-  await fetchMutation(api.dashboard.removeLegacyStoredSnapshot, {
-    key: STATE_KEY,
-  });
-
-  return mapStoredSnapshot(legacySnapshot);
-}
-
 export async function loadStoredSnapshot(): Promise<StoredSnapshotRecord | null> {
   const snapshot = await fetchQuery(api.snapshots.get, { key: SNAPSHOT_KEY });
-
-  if (snapshot) {
-    return mapStoredSnapshot(snapshot);
-  }
-
-  return await migrateLegacyStoredSnapshot();
+  return snapshot ? mapStoredSnapshot(snapshot) : null;
 }
 
 export async function saveStoredSnapshot(

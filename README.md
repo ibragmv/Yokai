@@ -124,8 +124,6 @@ bun run convex:deploy:dev
 bun run convex:deploy:prod
 bun run convex:logs:dev
 bun run convex:logs:prod
-bun run convex:migrate:snapshots:dev
-bun run convex:migrate:snapshots:prod
 ```
 
 External scheduler:

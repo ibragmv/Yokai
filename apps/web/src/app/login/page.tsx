@@ -45,7 +45,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <form action={setupMode ? setupAdminAction : loginAdminAction} className="auth-form">
           <label className="field">
             <span>Login</span>
-            <input autoCapitalize="none" autoComplete="username" name="login" required />
+            <input
+              autoCapitalize="none"
+              autoComplete="username"
+              name="login"
+              required
+              spellCheck={false}
+            />
           </label>
 
           <label className="field">

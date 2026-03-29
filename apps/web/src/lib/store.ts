@@ -40,13 +40,11 @@ const SECRET_SETTING_KEYS = [
 
 type SecretSettingKey = (typeof SECRET_SETTING_KEYS)[number];
 type EncryptedField = Awaited<ReturnType<typeof encryptValue>>;
-type LegacyStoredSnapshotRecord = Omit<StoredSnapshotRecord, 'sessionCount'> &
-  Partial<Pick<StoredSnapshotRecord, 'sessionCount'>>;
 type LegacySandboxRecord = Omit<
   SandboxRecord,
-  'previewUrl' | 'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'
+  'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'
 > &
-  Partial<Pick<SandboxRecord, 'previewUrl' | 'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'>>;
+  Partial<Pick<SandboxRecord, 'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'>>;
 type LegacySettings = Omit<DashboardSettings, SecretSettingKey | 'autoRecreateSandbox'> &
   Partial<Pick<DashboardSettings, 'autoRecreateSandbox'>>;
 
@@ -68,7 +66,6 @@ type LegacyPersistedDashboardState = Omit<
   encryptedSettings?: Partial<Record<SecretSettingKey, EncryptedField>>;
   sandbox: LegacySandboxRecord | null;
   operationLease?: SandboxOperationLease | null;
-  storedSnapshot?: LegacyStoredSnapshotRecord | null;
 };
 
 function isEncryptionAuthError(error: unknown) {
@@ -187,7 +184,6 @@ async function deserializeState(payload: LegacyPersistedDashboardState): Promise
     sandbox: payload.sandbox
       ? {
           ...payload.sandbox,
-          previewUrl: payload.sandbox.previewUrl ?? payload.sandbox.gatewayUrl ?? null,
           sourceSnapshotId: payload.sandbox.sourceSnapshotId ?? null,
           expiresAt: payload.sandbox.expiresAt ?? null,
           lastSnapshotAt: payload.sandbox.lastSnapshotAt ?? null,
@@ -213,7 +209,6 @@ function normalizeState(input: Partial<DashboardState> | null | undefined): Dash
     sandbox: input?.sandbox
       ? {
           ...input.sandbox,
-          previewUrl: input.sandbox.previewUrl ?? input.sandbox.gatewayUrl ?? null,
           sourceSnapshotId: input.sandbox.sourceSnapshotId ?? null,
           expiresAt: input.sandbox.expiresAt ?? null,
           lastSnapshotAt: input.sandbox.lastSnapshotAt ?? null,

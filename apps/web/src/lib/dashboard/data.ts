@@ -25,10 +25,12 @@ function sanitizeSettings(settings: DashboardSettings): DashboardPublicSettings 
 export async function loadDashboardPayload(): Promise<DashboardPayload> {
   await reconcileOpenClawSandboxLifecycle().catch(() => {});
   const state = await readDashboardState();
-  const storedSnapshot = await loadStoredSnapshot().catch(() => null);
-  const availableModels = await loadAvailableModels(state.settings.aiGatewayApiKey || undefined)
-    .catch(() => [])
-    .then((models) => (models.length ? models : [...DEFAULT_MODELS]));
+  const [storedSnapshot, availableModels] = await Promise.all([
+    loadStoredSnapshot().catch(() => null),
+    loadAvailableModels(state.settings.aiGatewayApiKey || undefined)
+      .catch(() => [])
+      .then((models) => (models.length ? models : [...DEFAULT_MODELS])),
+  ]);
 
   return {
     settings: sanitizeSettings(state.settings),

@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 
-import { mutation, query } from './_generated/server';
+import { type MutationCtx, type QueryCtx, mutation, query } from './_generated/server';
 
 import {
   dashboardStatePayloadValidator,
@@ -8,16 +8,22 @@ import {
   leaseAcquireResultValidator,
 } from './validators';
 
+type StateLookupCtx = Pick<QueryCtx | MutationCtx, 'db'>;
+
+async function getStateByKey(ctx: StateLookupCtx, key: string) {
+  return await ctx.db
+    .query('states')
+    .withIndex('by_key', (q) => q.eq('key', key))
+    .unique();
+}
+
 export const getState = query({
   args: {
     key: v.string(),
   },
   returns: v.union(dashboardStateRecordValidator, v.null()),
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query('states')
-      .withIndex('by_key', (q) => q.eq('key', args.key))
-      .unique();
+    return await getStateByKey(ctx, args.key);
   },
 });
 
@@ -28,10 +34,7 @@ export const upsertState = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query('states')
-      .withIndex('by_key', (q) => q.eq('key', args.key))
-      .unique();
+    const existing = await getStateByKey(ctx, args.key);
 
     if (existing) {
       await ctx.db.patch('states', existing._id, {
@@ -59,10 +62,7 @@ export const acquireOperationLease = mutation({
   },
   returns: leaseAcquireResultValidator,
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query('states')
-      .withIndex('by_key', (q) => q.eq('key', args.key))
-      .unique();
+    const existing = await getStateByKey(ctx, args.key);
 
     if (!existing) {
       return {
@@ -88,7 +88,7 @@ export const acquireOperationLease = mutation({
       expiresAt: now + Math.max(args.ttlMs, 5_000),
     };
 
-    await ctx.db.patch(existing._id, {
+    await ctx.db.patch('states', existing._id, {
       payload: {
         ...existing.payload,
         operationLease: lease,
@@ -110,10 +110,7 @@ export const releaseOperationLease = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query('states')
-      .withIndex('by_key', (q) => q.eq('key', args.key))
-      .unique();
+    const existing = await getStateByKey(ctx, args.key);
 
     if (!existing) {
       return null;
@@ -124,7 +121,7 @@ export const releaseOperationLease = mutation({
       return null;
     }
 
-    await ctx.db.patch(existing._id, {
+    await ctx.db.patch('states', existing._id, {
       payload: {
         ...existing.payload,
         operationLease: null,
@@ -132,34 +129,6 @@ export const releaseOperationLease = mutation({
       updatedAt: Date.now(),
     });
 
-    return null;
-  },
-});
-
-export const removeLegacyStoredSnapshot = mutation({
-  args: {
-    key: v.string(),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query('states')
-      .withIndex('by_key', (q) => q.eq('key', args.key))
-      .unique();
-
-    if (!existing || existing.payload.storedSnapshot === undefined) {
-      return null;
-    }
-
-    const payload = {
-      ...existing.payload,
-      storedSnapshot: undefined,
-    };
-
-    await ctx.db.patch('states', existing._id, {
-      payload,
-      updatedAt: Date.now(),
-    });
     return null;
   },
 });
