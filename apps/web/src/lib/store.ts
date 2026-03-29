@@ -12,7 +12,6 @@ import type {
   SandboxOperationType,
   SandboxRecord,
   SessionRecord,
-  StoredSnapshotRecord,
   UsageSnapshot,
 } from '@/lib/types';
 import { resolveVercelProjectId, resolveVercelTeamId } from '@/lib/vercel/project';

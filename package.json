@@ -9,7 +9,6 @@
     "convex:sync:dev": "bun run --cwd apps/web convex:sync:dev",
     "convex:deploy:dev": "bun run --cwd apps/web convex:deploy:dev",
     "convex:deploy:prod": "bun run --cwd apps/web convex:deploy:prod",
-    "convex:deploy": "bun run convex:deploy:prod",
     "convex:logs:dev": "bun run --cwd apps/web convex:logs:dev",
     "convex:logs:prod": "bun run --cwd apps/web convex:logs:prod",
     "build": "bun run --cwd apps/web build",
@@ -19,7 +18,6 @@
     "check": "biome check ."
   },
   "devDependencies": {
-    "@biomejs/biome": "1.9.4",
-    "typescript": "^5.8.2"
+    "@biomejs/biome": "1.9.4"
   }
 }

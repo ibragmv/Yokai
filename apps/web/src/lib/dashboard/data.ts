@@ -1,16 +1,11 @@
 import 'server-only';
 
-import { loadAvailableModels } from '@/lib/gateway/usage';
+import { DEFAULT_MODELS, loadAvailableModels } from '@/lib/gateway/usage';
 import { loadStoredSnapshot } from '@/lib/persistence/snapshots';
 import { reconcileOpenClawSandboxLifecycle } from '@/lib/sandbox/openclaw';
 import { readDashboardState } from '@/lib/store';
 import type { DashboardPayload, DashboardPublicSettings, DashboardSettings } from '@/lib/types';
 import { maskSecret } from '@/lib/utils';
-
-const DEFAULT_MODELS = [
-  'vercel-ai-gateway/anthropic/claude-sonnet-4.6',
-  'vercel-ai-gateway/google/gemini-3-flash',
-] as const;
 
 function sanitizeSettings(settings: DashboardSettings): DashboardPublicSettings {
   return {

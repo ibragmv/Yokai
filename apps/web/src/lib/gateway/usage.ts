@@ -1,6 +1,6 @@
 import 'server-only';
 
-const DEFAULT_MODELS = [
+export const DEFAULT_MODELS = [
   'vercel-ai-gateway/google/gemini-3-flash',
   'vercel-ai-gateway/anthropic/claude-sonnet-4.6',
 ] as const;
