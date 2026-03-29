@@ -28,9 +28,14 @@
 html {
   height: 100%;
   min-height: 100%;
-  background: radial-gradient(circle at top left, rgba(94, 126, 217, 0.24), transparent 30%),
-    radial-gradient(circle at 85% 12%, rgba(96, 195, 170, 0.18), transparent 24%),
-    linear-gradient(180deg, #07101b 0%, #0b1627 48%, #07101b 100%);
+  background: radial-gradient(
+      circle at 12% 8%,
+      rgba(94, 126, 217, 0.22),
+      transparent 0,
+      transparent 34%
+    ), radial-gradient(circle at 88% 14%, rgba(96, 195, 170, 0.12), transparent 0, transparent 28%),
+    radial-gradient(circle at 50% 100%, rgba(144, 183, 255, 0.08), transparent 0, transparent 42%),
+    linear-gradient(180deg, #07101b 0%, #0a1422 42%, #0b1627 72%, #07101b 100%);
   background-color: var(--bg-base);
   color: var(--text-primary);
   overflow-x: clip;
@@ -41,7 +46,8 @@ body {
   margin: 0;
   height: 100%;
   min-height: 100vh;
-  background: linear-gradient(180deg, #07101b 0%, #0b1627 48%, #07101b 100%);
+  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.015), transparent 22%),
+    linear-gradient(180deg, #07101b 0%, #0a1422 42%, #0b1627 72%, #07101b 100%);
   background-color: var(--bg-base);
   color: var(--text-primary);
   font-family: var(--font-display);
@@ -101,9 +107,14 @@ input:disabled {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(130deg, rgba(144, 183, 255, 0.08), transparent 28%),
-    radial-gradient(circle at 20% 0%, rgba(94, 126, 217, 0.16), transparent 18%),
-    radial-gradient(circle at 100% 22%, rgba(96, 195, 170, 0.1), transparent 22%);
+  background: radial-gradient(
+      circle at 16% 0%,
+      rgba(94, 126, 217, 0.14),
+      transparent 0,
+      transparent 24%
+    ), radial-gradient(circle at 100% 18%, rgba(96, 195, 170, 0.08), transparent 0, transparent 24%),
+    linear-gradient(135deg, rgba(144, 183, 255, 0.04), transparent 34%);
+  filter: blur(8px);
 }
 
 .dashboard-frame {

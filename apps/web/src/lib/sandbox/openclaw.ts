@@ -113,37 +113,6 @@ function getRestorableSnapshot(snapshot: StoredSnapshotRecord | null) {
   return snapshot;
 }
 
-async function captureBaselineSnapshot(
-  sandboxRecord: SandboxRecord,
-  commands: CommandRecord[],
-): Promise<{
-  sandboxRecord: SandboxRecord;
-  commands: CommandRecord[];
-}> {
-  if (sandboxRecord.status !== 'running' || sandboxRecord.sourceSnapshotId) {
-    return {
-      sandboxRecord,
-      commands,
-    };
-  }
-
-  try {
-    const snapshotCommand = await snapshotOpenClawSandbox(sandboxRecord.sandboxId);
-    return {
-      sandboxRecord: {
-        ...sandboxRecord,
-        lastSnapshotAt: snapshotCommand.finishedAt ?? Date.now(),
-      },
-      commands: [...commands, snapshotCommand],
-    };
-  } catch {
-    return {
-      sandboxRecord,
-      commands,
-    };
-  }
-}
-
 function createSandboxRecord(
   sandbox: Sandbox,
   input: {
@@ -438,13 +407,9 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
 
   if (!storedSnapshot) {
     const cleanBoot = await bootOpenClawSandbox(settings, null);
-    const bootWithSnapshot = await captureBaselineSnapshot(
-      cleanBoot.sandboxRecord,
-      cleanBoot.commands,
-    );
     return {
-      sandboxRecord: bootWithSnapshot.sandboxRecord,
-      commands: bootWithSnapshot.commands,
+      sandboxRecord: cleanBoot.sandboxRecord,
+      commands: cleanBoot.commands,
     };
   }
 
@@ -468,14 +433,10 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
       ...restoredBoot.commands,
       ...discardCommands,
     ]);
-    const bootWithSnapshot = await captureBaselineSnapshot(
-      cleanBoot.sandboxRecord,
-      cleanBoot.commands,
-    );
 
     return {
-      sandboxRecord: bootWithSnapshot.sandboxRecord,
-      commands: bootWithSnapshot.commands,
+      sandboxRecord: cleanBoot.sandboxRecord,
+      commands: cleanBoot.commands,
     };
   } catch (error) {
     const discardCommands = await discardStoredSnapshot(
@@ -484,14 +445,10 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
       `Stored snapshot ${storedSnapshot.snapshotId} could not be restored. Falling back to a clean sandbox. ${error instanceof Error ? error.message : 'Unknown restore error.'}`,
     );
     const cleanBoot = await bootOpenClawSandbox(settings, null, discardCommands);
-    const bootWithSnapshot = await captureBaselineSnapshot(
-      cleanBoot.sandboxRecord,
-      cleanBoot.commands,
-    );
 
     return {
-      sandboxRecord: bootWithSnapshot.sandboxRecord,
-      commands: bootWithSnapshot.commands,
+      sandboxRecord: cleanBoot.sandboxRecord,
+      commands: cleanBoot.commands,
     };
   }
 }
@@ -685,6 +642,22 @@ export async function snapshotOpenClawSandbox(sandboxId: string): Promise<Comman
   const previousSnapshot = await loadStoredSnapshot();
   const sandbox = await Sandbox.get({ sandboxId });
   const startedAt = Date.now();
+
+  await sandbox.runCommand({
+    cmd: 'bash',
+    args: [
+      '-lc',
+      [
+        `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
+        `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
+        'pkill -TERM -f "[o]penclaw gateway" || true',
+        'sleep 2',
+        'sync || true',
+      ].join(' && '),
+    ],
+    cwd: OPENCLAW_ROOT,
+  });
+
   const snapshot = await sandbox.snapshot({ expiration: SNAPSHOT_EXPIRATION_MS });
   await saveStoredSnapshot(snapshot);
 
