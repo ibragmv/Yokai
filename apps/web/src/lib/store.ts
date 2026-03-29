@@ -44,9 +44,9 @@ type LegacyStoredSnapshotRecord = Omit<StoredSnapshotRecord, 'sessionCount'> &
   Partial<Pick<StoredSnapshotRecord, 'sessionCount'>>;
 type LegacySandboxRecord = Omit<
   SandboxRecord,
-  'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'
+  'previewUrl' | 'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'
 > &
-  Partial<Pick<SandboxRecord, 'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'>>;
+  Partial<Pick<SandboxRecord, 'previewUrl' | 'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'>>;
 type LegacySettings = Omit<DashboardSettings, SecretSettingKey | 'autoRecreateSandbox'> &
   Partial<Pick<DashboardSettings, 'autoRecreateSandbox'>>;
 
@@ -187,6 +187,7 @@ async function deserializeState(payload: LegacyPersistedDashboardState): Promise
     sandbox: payload.sandbox
       ? {
           ...payload.sandbox,
+          previewUrl: payload.sandbox.previewUrl ?? payload.sandbox.gatewayUrl ?? null,
           sourceSnapshotId: payload.sandbox.sourceSnapshotId ?? null,
           expiresAt: payload.sandbox.expiresAt ?? null,
           lastSnapshotAt: payload.sandbox.lastSnapshotAt ?? null,
@@ -212,6 +213,7 @@ function normalizeState(input: Partial<DashboardState> | null | undefined): Dash
     sandbox: input?.sandbox
       ? {
           ...input.sandbox,
+          previewUrl: input.sandbox.previewUrl ?? input.sandbox.gatewayUrl ?? null,
           sourceSnapshotId: input.sandbox.sourceSnapshotId ?? null,
           expiresAt: input.sandbox.expiresAt ?? null,
           lastSnapshotAt: input.sandbox.lastSnapshotAt ?? null,

@@ -68,6 +68,7 @@ export const sandboxValidator = v.union(
     ),
     runtime: v.string(),
     gatewayUrl: v.union(v.string(), v.null()),
+    previewUrl: v.optional(v.union(v.string(), v.null())),
     sourceSnapshotId: v.optional(v.union(v.string(), v.null())),
     activeCpuUsageMs: v.union(v.number(), v.null()),
     networkBytes: v.union(v.number(), v.null()),
