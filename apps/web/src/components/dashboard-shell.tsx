@@ -75,7 +75,7 @@ function formatBytes(value: number | null) {
 
 function formatSnapshotLabel(snapshotId: string | null | undefined) {
   if (!snapshotId) {
-    return 'Clean boot';
+    return 'No snapshot';
   }
 
   if (snapshotId.length <= 16) {
@@ -83,6 +83,14 @@ function formatSnapshotLabel(snapshotId: string | null | undefined) {
   }
 
   return `${snapshotId.slice(0, 8)}…${snapshotId.slice(-6)}`;
+}
+
+function formatRestoreSourceLabel(snapshotId: string | null | undefined) {
+  if (!snapshotId) {
+    return 'Clean boot';
+  }
+
+  return formatSnapshotLabel(snapshotId);
 }
 
 function formatGatewayLabel(url: string | null | undefined) {
@@ -192,8 +200,12 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
 
   const heroFacts = [
     {
-      label: 'Snapshot source',
-      value: formatSnapshotLabel(data.sandbox?.sourceSnapshotId),
+      label: 'Restore source',
+      value: formatRestoreSourceLabel(data.sandbox?.sourceSnapshotId),
+    },
+    {
+      label: 'Stored snapshot',
+      value: formatSnapshotLabel(data.storedSnapshot?.snapshotId),
     },
     {
       label: 'Allowlist',
@@ -243,7 +255,11 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
     },
     {
       label: 'Snapshot restore',
-      value: formatSnapshotLabel(data.sandbox?.sourceSnapshotId),
+      value: formatRestoreSourceLabel(data.sandbox?.sourceSnapshotId),
+    },
+    {
+      label: 'Stored snapshot',
+      value: formatSnapshotLabel(data.storedSnapshot?.snapshotId),
     },
     {
       label: 'Expires',
@@ -316,7 +332,11 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                 </div>
                 <div>
                   <span>Last snapshot</span>
-                  <strong>{formatRelativeDate(data.sandbox?.lastSnapshotAt ?? null)}</strong>
+                  <strong>
+                    {formatRelativeDate(
+                      data.storedSnapshot?.updatedAt ?? data.sandbox?.lastSnapshotAt ?? null,
+                    )}
+                  </strong>
                 </div>
               </div>
             </div>

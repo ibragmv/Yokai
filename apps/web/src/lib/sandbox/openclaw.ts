@@ -18,7 +18,7 @@ import type {
   SessionRecord,
   StoredSnapshotRecord,
 } from '@/lib/types';
-import { truncate } from '@/lib/utils';
+import { stripAnsi, truncate } from '@/lib/utils';
 
 const OPENCLAW_ROOT = '/vercel/sandbox/openclaw';
 const GATEWAY_LOG_PATH = `${OPENCLAW_ROOT}/state/gateway.log`;
@@ -111,6 +111,37 @@ function getRestorableSnapshot(snapshot: StoredSnapshotRecord | null) {
   }
 
   return snapshot;
+}
+
+async function captureBaselineSnapshot(
+  sandboxRecord: SandboxRecord,
+  commands: CommandRecord[],
+): Promise<{
+  sandboxRecord: SandboxRecord;
+  commands: CommandRecord[];
+}> {
+  if (sandboxRecord.status !== 'running' || sandboxRecord.sourceSnapshotId) {
+    return {
+      sandboxRecord,
+      commands,
+    };
+  }
+
+  try {
+    const snapshotCommand = await snapshotOpenClawSandbox(sandboxRecord.sandboxId);
+    return {
+      sandboxRecord: {
+        ...sandboxRecord,
+        lastSnapshotAt: snapshotCommand.finishedAt ?? Date.now(),
+      },
+      commands: [...commands, snapshotCommand],
+    };
+  } catch {
+    return {
+      sandboxRecord,
+      commands,
+    };
+  }
 }
 
 function createSandboxRecord(
@@ -407,9 +438,13 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
 
   if (!storedSnapshot) {
     const cleanBoot = await bootOpenClawSandbox(settings, null);
+    const bootWithSnapshot = await captureBaselineSnapshot(
+      cleanBoot.sandboxRecord,
+      cleanBoot.commands,
+    );
     return {
-      sandboxRecord: cleanBoot.sandboxRecord,
-      commands: cleanBoot.commands,
+      sandboxRecord: bootWithSnapshot.sandboxRecord,
+      commands: bootWithSnapshot.commands,
     };
   }
 
@@ -433,10 +468,14 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
       ...restoredBoot.commands,
       ...discardCommands,
     ]);
+    const bootWithSnapshot = await captureBaselineSnapshot(
+      cleanBoot.sandboxRecord,
+      cleanBoot.commands,
+    );
 
     return {
-      sandboxRecord: cleanBoot.sandboxRecord,
-      commands: cleanBoot.commands,
+      sandboxRecord: bootWithSnapshot.sandboxRecord,
+      commands: bootWithSnapshot.commands,
     };
   } catch (error) {
     const discardCommands = await discardStoredSnapshot(
@@ -445,10 +484,14 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
       `Stored snapshot ${storedSnapshot.snapshotId} could not be restored. Falling back to a clean sandbox. ${error instanceof Error ? error.message : 'Unknown restore error.'}`,
     );
     const cleanBoot = await bootOpenClawSandbox(settings, null, discardCommands);
+    const bootWithSnapshot = await captureBaselineSnapshot(
+      cleanBoot.sandboxRecord,
+      cleanBoot.commands,
+    );
 
     return {
-      sandboxRecord: cleanBoot.sandboxRecord,
-      commands: cleanBoot.commands,
+      sandboxRecord: bootWithSnapshot.sandboxRecord,
+      commands: bootWithSnapshot.commands,
     };
   }
 }
@@ -491,8 +534,8 @@ export async function runTrackedCommand(
     args: input.args,
     cwd: OPENCLAW_ROOT,
   });
-  const stdout = truncate(await result.stdout());
-  const stderr = truncate(await result.stderr());
+  const stdout = truncate(stripAnsi(await result.stdout()));
+  const stderr = truncate(stripAnsi(await result.stderr()));
 
   return {
     cmdId: result.cmdId,
@@ -532,8 +575,8 @@ export async function syncOpenClawSessions(
       args,
       cwd: OPENCLAW_ROOT,
     });
-    const rawStdout = await sessionsResult.stdout();
-    const rawStderr = await sessionsResult.stderr();
+    const rawStdout = stripAnsi(await sessionsResult.stdout());
+    const rawStderr = stripAnsi(await sessionsResult.stderr());
     const timedOut = sessionsResult.exitCode === 124;
     const fallbackError =
       rawStderr ||

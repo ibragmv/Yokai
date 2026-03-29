@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { loadAvailableModels } from '@/lib/gateway/usage';
+import { loadStoredSnapshot } from '@/lib/persistence/snapshots';
 import { reconcileOpenClawSandboxLifecycle } from '@/lib/sandbox/openclaw';
 import { readDashboardState } from '@/lib/store';
 import type { DashboardPayload, DashboardPublicSettings, DashboardSettings } from '@/lib/types';
@@ -24,6 +25,7 @@ function sanitizeSettings(settings: DashboardSettings): DashboardPublicSettings 
 export async function loadDashboardPayload(): Promise<DashboardPayload> {
   await reconcileOpenClawSandboxLifecycle().catch(() => {});
   const state = await readDashboardState();
+  const storedSnapshot = await loadStoredSnapshot().catch(() => null);
   const availableModels = await loadAvailableModels(state.settings.aiGatewayApiKey || undefined)
     .catch(() => [])
     .then((models) => (models.length ? models : [...DEFAULT_MODELS]));
@@ -31,6 +33,7 @@ export async function loadDashboardPayload(): Promise<DashboardPayload> {
   return {
     settings: sanitizeSettings(state.settings),
     sandbox: state.sandbox,
+    storedSnapshot,
     sessions: [...state.sessions].sort((left, right) => right.updatedAt - left.updatedAt),
     commands: [...state.commands].sort((left, right) => right.startedAt - left.startedAt),
     usage: [...state.usage].sort((left, right) => right.recordedAt - left.recordedAt),

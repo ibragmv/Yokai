@@ -84,6 +84,7 @@ export type StoredSnapshotRecord = {
 export type DashboardPayload = {
   settings: DashboardPublicSettings;
   sandbox: SandboxRecord | null;
+  storedSnapshot: StoredSnapshotRecord | null;
   sessions: SessionRecord[];
   commands: CommandRecord[];
   usage: UsageSnapshot[];

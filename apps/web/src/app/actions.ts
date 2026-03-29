@@ -19,6 +19,22 @@ import type { DashboardActionResult, SettingsFormValues } from '@/lib/types';
 
 type SandboxAction = 'start' | 'stop' | 'sync';
 
+function shouldRefreshSnapshot(
+  lastSnapshotAt: number | null,
+  sessions: Awaited<ReturnType<typeof syncOpenClawSessions>>['sessions'],
+) {
+  if (!sessions.length) {
+    return lastSnapshotAt === null;
+  }
+
+  const latestSessionUpdate = sessions.reduce(
+    (latest, session) => Math.max(latest, session.updatedAt),
+    0,
+  );
+
+  return lastSnapshotAt === null || latestSessionUpdate > lastSnapshotAt;
+}
+
 function keepSecret(nextValue: string, currentValue: string): string {
   if (!nextValue || nextValue.includes('••••')) {
     return currentValue;
@@ -153,11 +169,19 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
 
     if (action === 'sync' && state.sandbox) {
       const synced = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
+      const snapshotCommand =
+        synced.sandbox.status === 'running' &&
+        shouldRefreshSnapshot(state.sandbox.lastSnapshotAt, synced.sessions)
+          ? await snapshotOpenClawSandbox(state.sandbox.sandboxId).catch(() => null)
+          : null;
       await updateDashboardState((current) => ({
         ...current,
-        sandbox: synced.sandbox,
+        sandbox: {
+          ...synced.sandbox,
+          lastSnapshotAt: snapshotCommand?.finishedAt ?? synced.sandbox.lastSnapshotAt,
+        },
         sessions: synced.sessions,
-        commands: synced.commands.reduce(
+        commands: [...(snapshotCommand ? [snapshotCommand] : []), ...synced.commands].reduce(
           (commands, command) => appendCommand(commands, command),
           current.commands,
         ),
