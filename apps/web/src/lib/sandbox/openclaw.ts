@@ -10,7 +10,7 @@ import {
   saveStoredSnapshot,
 } from '@/lib/persistence/snapshots';
 import { redactSecrets } from '@/lib/security/redaction';
-import { appendCommand, readDashboardState, updateDashboardState } from '@/lib/store';
+import { appendCommand, appendUsage, readDashboardState, updateDashboardState } from '@/lib/store';
 import type {
   CommandRecord,
   DashboardSettings,
@@ -63,7 +63,7 @@ function getExpiresAt(startedAt: number, settings: DashboardSettings) {
 }
 
 function getRolloverWindowMs(timeoutMs: number) {
-  return Math.min(120_000, Math.max(30_000, Math.floor(timeoutMs * 0.2)));
+  return Math.min(300_000, Math.max(90_000, Math.floor(timeoutMs * 0.3)));
 }
 
 function createSystemCommand(
@@ -651,7 +651,7 @@ export async function snapshotOpenClawSandbox(sandboxId: string): Promise<Comman
         `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
         `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
         'pkill -TERM -f "[o]penclaw gateway" || true',
-        'sleep 2',
+        'for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -f "[o]penclaw gateway" >/dev/null || break; sleep 1; done',
         'sync || true',
       ].join(' && '),
     ],
@@ -723,6 +723,12 @@ export async function reconcileOpenClawSandboxLifecycle() {
           } satisfies LifecycleReconcileResult;
         }
 
+        let preRolloverSync: Awaited<ReturnType<typeof syncOpenClawSessions>> | null = null;
+
+        try {
+          preRolloverSync = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
+        } catch {}
+
         let snapshotCommand: CommandRecord | null = null;
 
         try {
@@ -739,10 +745,20 @@ export async function reconcileOpenClawSandboxLifecycle() {
             lastSnapshotAt: snapshotCommand?.finishedAt ?? sandboxRecord.lastSnapshotAt,
           },
           sessions: [],
-          commands: nextCommands.reduce(
+          commands: [...(preRolloverSync?.commands ?? []), ...nextCommands].reduce(
             (items, command) => appendCommand(items, command),
             current.commands,
           ),
+          usage: preRolloverSync
+            ? appendUsage(current.usage, {
+                source: 'sandbox',
+                creditsRemaining: null,
+                creditsUsed: null,
+                cpuMs: preRolloverSync.sandbox.activeCpuUsageMs,
+                networkBytes: preRolloverSync.sandbox.networkBytes,
+                recordedAt: Date.now(),
+              })
+            : current.usage,
         }));
 
         if (sandboxRecord.sandboxId !== state.sandbox.sandboxId) {

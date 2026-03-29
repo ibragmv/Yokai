@@ -131,14 +131,34 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
     }
 
     if (action === 'stop' && state.sandbox) {
+      let synced: Awaited<ReturnType<typeof syncOpenClawSessions>> | null = null;
+
+      try {
+        synced = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
+      } catch {}
+
       const snapshotCommand = await snapshotOpenClawSandbox(state.sandbox.sandboxId);
       await stopOpenClawSandbox(state.sandbox.sandboxId);
       await updateDashboardState((current) => ({
         ...current,
-        commands: appendCommand(current.commands, snapshotCommand),
+        sessions: synced?.sessions ?? current.sessions,
+        commands: [...(synced?.commands ?? []), snapshotCommand].reduce(
+          (commands, command) => appendCommand(commands, command),
+          current.commands,
+        ),
+        usage: synced
+          ? appendUsage(current.usage, {
+              source: 'sandbox',
+              creditsRemaining: null,
+              creditsUsed: null,
+              cpuMs: synced.sandbox.activeCpuUsageMs,
+              networkBytes: synced.sandbox.networkBytes,
+              recordedAt: Date.now(),
+            })
+          : current.usage,
         sandbox: current.sandbox
           ? {
-              ...current.sandbox,
+              ...(synced?.sandbox ?? current.sandbox),
               status: 'stopped',
               previewUrl: null,
               gatewayUrl: null,
