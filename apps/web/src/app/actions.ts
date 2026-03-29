@@ -160,7 +160,6 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
           ? {
               ...(synced?.sandbox ?? current.sandbox),
               status: 'stopped',
-              previewUrl: null,
               gatewayUrl: null,
               errorMessage: null,
               expiresAt: null,

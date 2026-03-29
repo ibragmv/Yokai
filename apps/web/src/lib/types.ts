@@ -29,7 +29,6 @@ export type SandboxRecord = {
   sandboxId: string;
   status: SandboxStatus;
   runtime: string;
-  previewUrl: string | null;
   gatewayUrl: string | null;
   sourceSnapshotId: string | null;
   activeCpuUsageMs: number | null;

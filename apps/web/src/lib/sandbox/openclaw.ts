@@ -125,14 +125,13 @@ function createSandboxRecord(
   },
 ): SandboxRecord {
   const startedAt = input.startedAt ?? Date.now();
-  const previewUrl = sandbox.domain(18789);
+  const gatewayUrl = sandbox.domain(18789);
 
   return {
     sandboxId: sandbox.sandboxId,
     status: input.status,
     runtime: DEFAULT_RUNTIME,
-    previewUrl,
-    gatewayUrl: previewUrl,
+    gatewayUrl,
     sourceSnapshotId: input.sourceSnapshotId,
     activeCpuUsageMs: sandbox.activeCpuUsageMs ?? null,
     networkBytes: getNetworkBytes(sandbox),
@@ -586,7 +585,6 @@ export async function syncOpenClawSessions(
         sandboxId,
         status: sandbox.status === 'running' ? 'running' : 'stopped',
         runtime: DEFAULT_RUNTIME,
-        previewUrl: sandbox.domain(18789),
         gatewayUrl: sandbox.domain(18789),
         sourceSnapshotId: sandbox.sourceSnapshotId ?? null,
         activeCpuUsageMs: sandbox.activeCpuUsageMs ?? null,
@@ -613,7 +611,6 @@ export async function syncOpenClawSessions(
         sandboxId,
         status: 'stopped',
         runtime: DEFAULT_RUNTIME,
-        previewUrl: null,
         gatewayUrl: null,
         sourceSnapshotId: storedSnapshot?.snapshotId ?? null,
         activeCpuUsageMs: null,

@@ -101,6 +101,11 @@ function formatGatewayLabel(url: string | null | undefined) {
   return url.replace(/^https?:\/\//, '');
 }
 
+function getSnapshotWindowMs(timeoutSeconds: number) {
+  const timeoutMs = Math.max(timeoutSeconds, 60) * 1000;
+  return Math.min(300_000, Math.max(90_000, Math.floor(timeoutMs * 0.3)));
+}
+
 export function DashboardShell({ initialData }: { initialData: DashboardPayload }) {
   const [data, setData] = useState(initialData);
   const [draft, setDraft] = useState(() => createFormValues(initialData));
@@ -112,6 +117,17 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
   const isDirty = !isSameForm(draft, savedFormValues);
   const allowlistedUsers = countCsvValues(draft.allowedUserIds);
   const allowlistedGroups = countCsvValues(draft.allowedGroupIds);
+  const nextSnapshotAt =
+    data.sandbox?.status === 'running' && data.sandbox.expiresAt
+      ? data.sandbox.expiresAt - getSnapshotWindowMs(data.settings.timeoutSeconds)
+      : null;
+  const handoffCopy = data.sandbox
+    ? data.sandbox.status === 'running'
+      ? data.settings.autoRecreateSandbox
+        ? `Managed handoff: final sync and snapshot scheduled before rollover at ${formatRelativeDate(nextSnapshotAt)}.`
+        : 'Managed snapshot is taken on Stop. Auto-rollover is disabled.'
+      : 'Next sandbox will restore from the latest stored snapshot when available.'
+    : 'Start a sandbox to create a live runtime, then Yokai will preserve memory across managed restarts.';
 
   function applyPayload(payload: DashboardPayload, options?: { preserveDraft?: boolean }) {
     setData(payload);
@@ -216,8 +232,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
       value: `${Math.max(draft.timeoutSeconds, 60)}s`,
     },
     {
-      label: 'Last sync',
-      value: formatRelativeDate(data.sandbox?.updatedAt ?? null),
+      label: 'Next handoff',
+      value: formatRelativeDate(nextSnapshotAt),
     },
   ];
 
@@ -339,6 +355,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                   </strong>
                 </div>
               </div>
+
+              <p className="status-note">{handoffCopy}</p>
             </div>
 
             <div className="action-row">
