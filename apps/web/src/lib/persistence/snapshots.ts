@@ -16,6 +16,7 @@ function mapSnapshot(snapshot: Snapshot): StoredSnapshotRecord {
     sourceSandboxId: snapshot.sourceSandboxId,
     createdAt: snapshot.createdAt.getTime(),
     expiresAt: snapshot.expiresAt?.getTime() ?? null,
+    sessionCount: null,
     updatedAt: Date.now(),
   };
 }
@@ -25,6 +26,7 @@ function mapStoredSnapshot(record: {
   sourceSandboxId: string;
   createdAt: number;
   expiresAt: number | null;
+  sessionCount?: number | null;
   updatedAt: number;
 }): StoredSnapshotRecord {
   return {
@@ -32,6 +34,7 @@ function mapStoredSnapshot(record: {
     sourceSandboxId: record.sourceSandboxId,
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,
+    sessionCount: record.sessionCount ?? null,
     updatedAt: record.updatedAt,
   };
 }
@@ -52,7 +55,7 @@ async function migrateLegacyStoredSnapshot(): Promise<StoredSnapshotRecord | nul
     key: STATE_KEY,
   });
 
-  return legacySnapshot;
+  return mapStoredSnapshot(legacySnapshot);
 }
 
 export async function loadStoredSnapshot(): Promise<StoredSnapshotRecord | null> {
@@ -65,8 +68,16 @@ export async function loadStoredSnapshot(): Promise<StoredSnapshotRecord | null>
   return await migrateLegacyStoredSnapshot();
 }
 
-export async function saveStoredSnapshot(snapshot: Snapshot): Promise<StoredSnapshotRecord> {
-  const nextSnapshot = mapSnapshot(snapshot);
+export async function saveStoredSnapshot(
+  snapshot: Snapshot,
+  metadata?: {
+    sessionCount?: number | null;
+  },
+): Promise<StoredSnapshotRecord> {
+  const nextSnapshot = {
+    ...mapSnapshot(snapshot),
+    sessionCount: metadata?.sessionCount ?? null,
+  } satisfies StoredSnapshotRecord;
 
   await fetchMutation(api.snapshots.upsert, {
     key: SNAPSHOT_KEY,

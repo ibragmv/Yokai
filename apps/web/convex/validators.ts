@@ -31,6 +31,7 @@ export const snapshotValueValidator = v.object({
   sourceSandboxId: v.string(),
   createdAt: v.number(),
   expiresAt: v.union(v.number(), v.null()),
+  sessionCount: v.optional(v.union(v.number(), v.null())),
   updatedAt: v.number(),
 });
 
@@ -44,6 +45,7 @@ export const snapshotRecordValidator = v.object({
   sourceSandboxId: v.string(),
   createdAt: v.number(),
   expiresAt: v.union(v.number(), v.null()),
+  sessionCount: v.optional(v.union(v.number(), v.null())),
   updatedAt: v.number(),
 });
 

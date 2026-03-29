@@ -21,7 +21,15 @@ import type {
 import { stripAnsi, truncate } from '@/lib/utils';
 
 const OPENCLAW_ROOT = '/vercel/sandbox/openclaw';
+const OPENCLAW_STATE_ROOT = `${OPENCLAW_ROOT}/state`;
+const OPENCLAW_WORKSPACE_ROOT = `${OPENCLAW_ROOT}/workspace`;
+const OPENCLAW_STATE_ARCHIVE_ROOT = OPENCLAW_ROOT.slice(1);
+const OPENCLAW_STATE_ARCHIVE_DIR = `${OPENCLAW_STATE_ARCHIVE_ROOT}/state`;
+const OPENCLAW_WORKSPACE_ARCHIVE_DIR = `${OPENCLAW_STATE_ARCHIVE_ROOT}/workspace`;
 const GATEWAY_LOG_PATH = `${OPENCLAW_ROOT}/state/gateway.log`;
+const HANDOFF_ROOT = `${OPENCLAW_ROOT}/handoff`;
+const HANDOFF_BUNDLE_PATH = `${HANDOFF_ROOT}/openclaw-state.tgz`;
+const HANDOFF_SESSIONS_PATH = `${HANDOFF_ROOT}/sessions.json`;
 const DEFAULT_RUNTIME = 'node24';
 const GATEWAY_READY_TIMEOUT_MS = 20_000;
 const GATEWAY_READY_POLL_MS = 1_000;
@@ -45,6 +53,7 @@ export type LifecycleReconcileResult = {
 type BootSandboxResult = {
   sandbox: Sandbox;
   sandboxRecord: SandboxRecord;
+  sessions: SessionRecord[];
   commands: CommandRecord[];
 };
 
@@ -150,7 +159,7 @@ async function primeOpenClawWorkspace(sandbox: Sandbox, settings: DashboardSetti
     args: [
       '-lc',
       [
-        `mkdir -p "${OPENCLAW_ROOT}" "${OPENCLAW_ROOT}/state" "${OPENCLAW_ROOT}/workspace"`,
+        `mkdir -p "${OPENCLAW_ROOT}" "${OPENCLAW_STATE_ROOT}" "${OPENCLAW_WORKSPACE_ROOT}" "${HANDOFF_ROOT}"`,
         `rm -f "${GATEWAY_LOG_PATH}"`,
         `find "${OPENCLAW_ROOT}/state" -maxdepth 1 \\( -name "*.pid" -o -name "*.lock" -o -name "*.sock" \\) -delete 2>/dev/null || true`,
       ].join('\n'),
@@ -163,6 +172,29 @@ async function primeOpenClawWorkspace(sandbox: Sandbox, settings: DashboardSetti
       content: Buffer.from(buildOpenClawConfig(settings)),
     },
   ]);
+}
+
+async function restoreOpenClawHandoffBundle(
+  sandbox: Sandbox,
+  settings: DashboardSettings,
+): Promise<CommandRecord> {
+  return await runTrackedCommand(sandbox, {
+    cmd: 'bash',
+    args: [
+      '-lc',
+      [
+        `if [ ! -f "${HANDOFF_BUNDLE_PATH}" ]; then`,
+        `  echo "No OpenClaw handoff bundle found at ${HANDOFF_BUNDLE_PATH}."`,
+        '  exit 0',
+        'fi',
+        'mkdir -p "$HOME/.openclaw"',
+        `tar -xzf "${HANDOFF_BUNDLE_PATH}" -C /`,
+        'sync || true',
+        `echo "Restored OpenClaw handoff bundle from ${HANDOFF_BUNDLE_PATH}."`,
+      ].join('\n'),
+    ],
+    settings,
+  });
 }
 
 async function probeGatewayStatus(sandbox: Sandbox) {
@@ -260,6 +292,7 @@ async function bootOpenClawSandbox(
     await primeOpenClawWorkspace(sandbox, settings);
 
     const commands = [...inheritedCommands];
+    let sessions: SessionRecord[] = [];
 
     if (restoredSnapshot) {
       commands.push(
@@ -269,6 +302,7 @@ async function bootOpenClawSandbox(
           `Restored sandbox from snapshot ${restoredSnapshot.snapshotId}.`,
         ),
       );
+      commands.push(await restoreOpenClawHandoffBundle(sandbox, settings));
     } else {
       const installResult = await runTrackedCommand(sandbox, {
         cmd: 'bash',
@@ -295,6 +329,7 @@ async function bootOpenClawSandbox(
               installResult.stderr || installResult.stdout || 'OpenClaw installation failed.',
             lastSnapshotAt: null,
           }),
+          sessions,
           commands,
         };
       }
@@ -331,27 +366,65 @@ async function bootOpenClawSandbox(
             'OpenClaw gateway did not become ready before timeout.',
           lastSnapshotAt: restoredSnapshot?.updatedAt ?? null,
         }),
+        sessions,
         commands,
       };
     }
 
     const version = await sandbox.runCommand('bash', ['-lc', 'openclaw --version']);
     const startedAt = Date.now();
+    const sandboxRecord = {
+      ...createSandboxRecord(sandbox, {
+        status: 'running',
+        sourceSnapshotId: sandbox.sourceSnapshotId ?? restoredSnapshot?.snapshotId ?? null,
+        openClawVersion: (await version.stdout()).trim() || null,
+        errorMessage: null,
+        lastSnapshotAt: restoredSnapshot?.updatedAt ?? null,
+        startedAt,
+      }),
+      expiresAt: getExpiresAt(startedAt, settings),
+      updatedAt: startedAt,
+    } satisfies SandboxRecord;
+
+    if (restoredSnapshot) {
+      try {
+        const restoredSync = await syncOpenClawSessions(sandbox.sandboxId, settings);
+        sessions = restoredSync.sessions;
+        commands.push(...restoredSync.commands);
+
+        if (
+          typeof restoredSnapshot.sessionCount === 'number' &&
+          restoredSnapshot.sessionCount > 0 &&
+          restoredSync.sessions.length === 0
+        ) {
+          commands.push(
+            createSystemCommand(
+              sandbox.sandboxId,
+              'system:restore-session-mismatch',
+              `Snapshot ${restoredSnapshot.snapshotId} expected ${restoredSnapshot.sessionCount} session(s), but restore reported none.`,
+            ),
+          );
+        }
+      } catch (error) {
+        commands.push(
+          createSystemCommand(
+            sandbox.sandboxId,
+            'system:restore-session-sync-failed',
+            redactSecrets(
+              error instanceof Error
+                ? error.message
+                : 'Failed to verify restored OpenClaw sessions.',
+              settings,
+            ) ?? 'Failed to verify restored OpenClaw sessions.',
+          ),
+        );
+      }
+    }
 
     return {
       sandbox,
-      sandboxRecord: {
-        ...createSandboxRecord(sandbox, {
-          status: 'running',
-          sourceSnapshotId: sandbox.sourceSnapshotId ?? restoredSnapshot?.snapshotId ?? null,
-          openClawVersion: (await version.stdout()).trim() || null,
-          errorMessage: null,
-          lastSnapshotAt: restoredSnapshot?.updatedAt ?? null,
-          startedAt,
-        }),
-        expiresAt: getExpiresAt(startedAt, settings),
-        updatedAt: startedAt,
-      },
+      sandboxRecord,
+      sessions,
       commands,
     };
   } catch (error) {
@@ -395,6 +468,7 @@ export async function isOpenClawSandboxRunning(sandboxId: string) {
 
 export async function createOpenClawSandbox(settings: DashboardSettings): Promise<{
   sandboxRecord: SandboxRecord;
+  sessions: SessionRecord[];
   commands: CommandRecord[];
 }> {
   const snapshotRecord = await loadStoredSnapshot();
@@ -408,6 +482,7 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
     const cleanBoot = await bootOpenClawSandbox(settings, null);
     return {
       sandboxRecord: cleanBoot.sandboxRecord,
+      sessions: cleanBoot.sessions,
       commands: cleanBoot.commands,
     };
   }
@@ -418,6 +493,7 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
     if (restoredBoot.sandboxRecord.status === 'running') {
       return {
         sandboxRecord: restoredBoot.sandboxRecord,
+        sessions: restoredBoot.sessions,
         commands: restoredBoot.commands,
       };
     }
@@ -435,6 +511,7 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
 
     return {
       sandboxRecord: cleanBoot.sandboxRecord,
+      sessions: cleanBoot.sessions,
       commands: cleanBoot.commands,
     };
   } catch (error) {
@@ -447,6 +524,7 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
 
     return {
       sandboxRecord: cleanBoot.sandboxRecord,
+      sessions: cleanBoot.sessions,
       commands: cleanBoot.commands,
     };
   }
@@ -635,10 +713,19 @@ export async function syncOpenClawSessions(
   }
 }
 
-export async function snapshotOpenClawSandbox(sandboxId: string): Promise<CommandRecord> {
+export async function snapshotOpenClawSandbox(
+  sandboxId: string,
+  settings: DashboardSettings,
+): Promise<CommandRecord> {
   const previousSnapshot = await loadStoredSnapshot();
   const sandbox = await Sandbox.get({ sandboxId });
   const startedAt = Date.now();
+  let sessionCount: number | null = null;
+
+  try {
+    const synced = await syncOpenClawSessions(sandboxId, settings);
+    sessionCount = synced.sessions.length;
+  } catch {}
 
   await sandbox.runCommand({
     cmd: 'bash',
@@ -647,8 +734,15 @@ export async function snapshotOpenClawSandbox(sandboxId: string): Promise<Comman
       [
         `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
         `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
+        `mkdir -p "${HANDOFF_ROOT}"`,
+        `timeout ${SESSION_SYNC_TIMEOUT_SECONDS}s openclaw sessions --all-agents --json > "${HANDOFF_SESSIONS_PATH}" 2>/dev/null || true`,
         'pkill -TERM -f "[o]penclaw gateway" || true',
         'for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -f "[o]penclaw gateway" >/dev/null || break; sleep 1; done',
+        'paths=()',
+        `[ -d "${OPENCLAW_STATE_ROOT}" ] && paths+=("${OPENCLAW_STATE_ARCHIVE_DIR}")`,
+        `[ -d "${OPENCLAW_WORKSPACE_ROOT}" ] && paths+=("${OPENCLAW_WORKSPACE_ARCHIVE_DIR}")`,
+        '[ -d "$HOME/.openclaw" ] && paths+=("${HOME#/}/.openclaw")',
+        `if [ "\${#paths[@]}" -gt 0 ]; then tar -C / -czf "${HANDOFF_BUNDLE_PATH}" "\${paths[@]}"; else echo "No OpenClaw directories found to archive." > "${HANDOFF_SESSIONS_PATH}"; fi`,
         'sync || true',
       ].join(' && '),
     ],
@@ -656,7 +750,7 @@ export async function snapshotOpenClawSandbox(sandboxId: string): Promise<Comman
   });
 
   const snapshot = await sandbox.snapshot({ expiration: SNAPSHOT_EXPIRATION_MS });
-  await saveStoredSnapshot(snapshot);
+  await saveStoredSnapshot(snapshot, { sessionCount });
 
   if (previousSnapshot && previousSnapshot.snapshotId !== snapshot.snapshotId) {
     await deleteRemoteSnapshot(previousSnapshot.snapshotId);
@@ -729,10 +823,10 @@ export async function reconcileOpenClawSandboxLifecycle() {
         let snapshotCommand: CommandRecord | null = null;
 
         try {
-          snapshotCommand = await snapshotOpenClawSandbox(state.sandbox.sandboxId);
+          snapshotCommand = await snapshotOpenClawSandbox(state.sandbox.sandboxId, state.settings);
         } catch {}
 
-        const { sandboxRecord, commands } = await createOpenClawSandbox(state.settings);
+        const { sandboxRecord, sessions, commands } = await createOpenClawSandbox(state.settings);
         const nextCommands = [...(snapshotCommand ? [snapshotCommand] : []), ...commands];
 
         await updateDashboardState((current) => ({
@@ -741,7 +835,7 @@ export async function reconcileOpenClawSandboxLifecycle() {
             ...sandboxRecord,
             lastSnapshotAt: snapshotCommand?.finishedAt ?? sandboxRecord.lastSnapshotAt,
           },
-          sessions: [],
+          sessions,
           commands: [...(preRolloverSync?.commands ?? []), ...nextCommands].reduce(
             (items, command) => appendCommand(items, command),
             current.commands,
@@ -774,12 +868,12 @@ export async function reconcileOpenClawSandboxLifecycle() {
         } satisfies LifecycleReconcileResult;
       }
 
-      const { sandboxRecord, commands } = await createOpenClawSandbox(state.settings);
+      const { sandboxRecord, sessions, commands } = await createOpenClawSandbox(state.settings);
 
       await updateDashboardState((current) => ({
         ...current,
         sandbox: sandboxRecord,
-        sessions: [],
+        sessions,
         commands: commands.reduce(
           (items, command) => appendCommand(items, command),
           current.commands,

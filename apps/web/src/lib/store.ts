@@ -37,6 +37,8 @@ const SECRET_SETTING_KEYS = [
 
 type SecretSettingKey = (typeof SECRET_SETTING_KEYS)[number];
 type EncryptedField = Awaited<ReturnType<typeof encryptValue>>;
+type LegacyStoredSnapshotRecord = Omit<StoredSnapshotRecord, 'sessionCount'> &
+  Partial<Pick<StoredSnapshotRecord, 'sessionCount'>>;
 type LegacySandboxRecord = Omit<
   SandboxRecord,
   'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'
@@ -61,7 +63,7 @@ type LegacyPersistedDashboardState = Omit<
   settings: LegacySettings;
   encryptedSettings?: Partial<Record<SecretSettingKey, EncryptedField>>;
   sandbox: LegacySandboxRecord | null;
-  storedSnapshot?: StoredSnapshotRecord | null;
+  storedSnapshot?: LegacyStoredSnapshotRecord | null;
 };
 
 function isEncryptionAuthError(error: unknown) {

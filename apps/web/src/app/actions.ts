@@ -114,11 +114,11 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
 
   try {
     if (action === 'start') {
-      const { sandboxRecord, commands } = await createOpenClawSandbox(state.settings);
+      const { sandboxRecord, sessions, commands } = await createOpenClawSandbox(state.settings);
       await updateDashboardState((current) => ({
         ...current,
         sandbox: sandboxRecord,
-        sessions: [],
+        sessions,
         commands: commands.reduce(
           (items, command) => appendCommand(items, command),
           current.commands,
@@ -137,7 +137,10 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
         synced = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
       } catch {}
 
-      const snapshotCommand = await snapshotOpenClawSandbox(state.sandbox.sandboxId);
+      const snapshotCommand = await snapshotOpenClawSandbox(
+        state.sandbox.sandboxId,
+        state.settings,
+      );
       await stopOpenClawSandbox(state.sandbox.sandboxId);
       await updateDashboardState((current) => ({
         ...current,

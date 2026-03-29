@@ -77,6 +77,7 @@ export type StoredSnapshotRecord = {
   sourceSandboxId: string;
   createdAt: number;
   expiresAt: number | null;
+  sessionCount: number | null;
   updatedAt: number;
 };
 
