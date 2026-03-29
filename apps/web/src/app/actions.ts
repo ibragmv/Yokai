@@ -23,6 +23,7 @@ import {
   updateDashboardState,
 } from '@/lib/store';
 import type { DashboardActionResult, SettingsFormValues } from '@/lib/types';
+import { normalizeCsv } from '@/lib/utils';
 
 type SandboxAction = 'start' | 'stop' | 'sync';
 const ACTION_LEASE_TTLS_MS: Record<SandboxAction, number> = {
@@ -82,6 +83,7 @@ export async function saveSettingsAction(
 ): Promise<DashboardActionResult> {
   await requireAdminSession();
   const current = await readDashboardState();
+  const shouldRestartSandbox = current.sandbox?.status === 'running';
 
   await updateDashboardState((state) => ({
     ...state,
@@ -93,8 +95,8 @@ export async function saveSettingsAction(
       vercelApiToken: keepSecret(input.vercelApiToken, current.settings.vercelApiToken),
       vercelProjectId: input.vercelProjectId,
       vercelTeamId: input.vercelTeamId,
-      allowedUserIds: input.allowedUserIds,
-      allowedGroupIds: input.allowedGroupIds,
+      allowedUserIds: normalizeCsv(input.allowedUserIds),
+      allowedGroupIds: normalizeCsv(input.allowedGroupIds),
       requireMention: input.requireMention,
       autoRecreateSandbox: input.autoRecreateSandbox,
       timeoutSeconds: input.timeoutSeconds,
@@ -105,7 +107,12 @@ export async function saveSettingsAction(
   }));
 
   await recordGatewayCredits();
-  return getResult(true, 'Settings saved.');
+  return getResult(
+    true,
+    shouldRestartSandbox
+      ? 'Settings saved. Restart the sandbox to apply changes to the running OpenClaw instance.'
+      : 'Settings saved.',
+  );
 }
 
 export async function runSandboxAction(action: SandboxAction): Promise<DashboardActionResult> {

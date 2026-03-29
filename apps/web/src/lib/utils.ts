@@ -1,8 +1,16 @@
 export function splitCsv(input: string): string[] {
-  return input
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
+  return Array.from(
+    new Set(
+      input
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+export function normalizeCsv(input: string): string {
+  return splitCsv(input).join(', ');
 }
 
 export function truncate(value: string, limit = 2400): string {

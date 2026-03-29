@@ -68,7 +68,6 @@ export function buildOpenClawConfig(settings: DashboardSettings): string {
           dmPolicy: 'allowlist',
           allowFrom: allowedUsers,
           groupPolicy: 'allowlist',
-          groupAllowFrom: allowedUsers,
           groups,
         },
       },
