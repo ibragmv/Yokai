@@ -6,7 +6,7 @@ Yokai is a private control room for running OpenClaw inside Vercel Sandbox. The 
 
 - boot, stop, and sync an OpenClaw sandbox
 - configure Telegram access, gateway credentials, default model, timeout, and Vercel project metadata
-- auto-roll a sandbox before its TTL expires and restore it from the latest persisted snapshot
+- auto-roll a sandbox before its TTL expires and restore it from the latest persisted snapshot when a dashboard or scheduler request triggers lifecycle reconciliation
 - bootstrap the first admin account from `/login`, then protect the dashboard with cookie-based sessions
 - show recent OpenClaw sessions, tracked sandbox commands, and usage snapshots
 - mask secrets in the UI and encrypt sensitive values before persisting them in Convex
@@ -56,6 +56,7 @@ Additional variables used by the app:
 
 ```dotenv
 YOKAI_ALLOWED_ORIGINS=
+CRON_SECRET=
 AI_GATEWAY_API_KEY=
 VERCEL_OIDC_TOKEN=
 VERCEL_ACCESS_TOKEN=
@@ -63,13 +64,26 @@ VERCEL_PROJECT_ID=
 VERCEL_TEAM_ID=
 ```
 
+Optional Convex target variables used by the deploy and log scripts:
+
+```dotenv
+CONVEX_DEPLOYMENT_DEV=
+NEXT_PUBLIC_CONVEX_URL_DEV=
+NEXT_PUBLIC_CONVEX_SITE_URL_DEV=
+CONVEX_DEPLOYMENT_PROD=
+NEXT_PUBLIC_CONVEX_URL_PROD=
+NEXT_PUBLIC_CONVEX_SITE_URL_PROD=
+```
+
 Notes:
 
 - `YOKAI_ENCRYPTION_KEY` is mandatory. Without it, Yokai cannot decrypt encrypted dashboard secrets from Convex.
 - `YOKAI_ALLOWED_ORIGINS` controls the allowed origins for Next.js Server Actions.
-- `CRON_SECRET` protects the internal rollover endpoint for external schedulers such as `cron-job.org`.
+- `CRON_SECRET` protects the internal rollover endpoint for external schedulers such as `cron-job.org`. In local development, the rollover route is allowed without it when `NODE_ENV` is not `production`.
+- `autoRecreateSandbox` is not a background daemon by itself. Without an open dashboard or an external scheduler hitting the rollover endpoint, an expired sandbox stays down until the next request triggers reconciliation.
 - `AI_GATEWAY_API_KEY`, `VERCEL_ACCESS_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID` can be prefilled from env or later managed from the dashboard.
 - `VERCEL_OIDC_TOKEN` is only available from env and is forwarded into the sandbox when present.
+- the `CONVEX_*_DEV` and `CONVEX_*_PROD` variables are only needed for the explicit `convex:deploy:*` and `convex:logs:*` helper scripts.
 
 ## Local Development
 
@@ -133,11 +147,17 @@ GET /api/internal/sandbox-rollover
 Authorization: Bearer <CRON_SECRET>
 ```
 
+Use an external scheduler if you want sandbox rollover and recovery to continue while nobody is visiting the dashboard. Without it, lifecycle reconciliation only runs on normal app requests.
+
 ## Dashboard Behavior
 
 - the dashboard auto-refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint
 - `Start sandbox` creates a new Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`
-- when auto-recreate is enabled, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` in Convex `snapshots`, and boots the replacement sandbox from that snapshot
+- when auto-recreate is enabled, Yokai attempts lifecycle reconciliation during dashboard page loads, `/api/overview` refreshes, and `/api/internal/sandbox-rollover` calls
+- during that reconciliation, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` in Convex `snapshots`, and boots the replacement sandbox from that snapshot
+- if a sandbox has already stopped or expired, auto-recreate can also recover it on the next reconciliation request
+- if you manually stop the sandbox while auto-recreate remains enabled, the next reconciliation request can start it again
+- if nobody opens the dashboard and no external scheduler pings `/api/internal/sandbox-rollover`, an expired sandbox remains stopped until the next request
 - `/api/internal/sandbox-rollover` is intended to be called by an external scheduler like `cron-job.org`; it requires `Authorization: Bearer <CRON_SECRET>` in production
 - `Sync` fetches OpenClaw session data and appends runtime usage snapshots
 - recent command stdout/stderr is stored in Convex after secret redaction
