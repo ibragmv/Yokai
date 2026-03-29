@@ -10,10 +10,18 @@ import {
   saveStoredSnapshot,
 } from '@/lib/persistence/snapshots';
 import { redactSecrets } from '@/lib/security/redaction';
-import { appendCommand, appendUsage, readDashboardState, updateDashboardState } from '@/lib/store';
+import {
+  acquireSandboxOperationLease,
+  appendCommand,
+  appendUsage,
+  readDashboardState,
+  releaseSandboxOperationLease,
+  updateDashboardState,
+} from '@/lib/store';
 import type {
   CommandRecord,
   DashboardSettings,
+  SandboxOperationType,
   SandboxRecord,
   SessionRecord,
   StoredSnapshotRecord,
@@ -35,6 +43,12 @@ const GATEWAY_READY_TIMEOUT_MS = 20_000;
 const GATEWAY_READY_POLL_MS = 1_000;
 const SNAPSHOT_EXPIRATION_MS = 0;
 const SESSION_SYNC_TIMEOUT_SECONDS = 20;
+const OPERATION_LEASE_TTLS_MS: Record<SandboxOperationType, number> = {
+  start: 10 * 60_000,
+  stop: 4 * 60_000,
+  sync: 90_000,
+  reconcile: 10 * 60_000,
+};
 
 export type LifecycleReconcileResult = {
   status: 'skipped' | 'recreated';
@@ -42,6 +56,7 @@ export type LifecycleReconcileResult = {
     | 'sandbox-missing'
     | 'sandbox-not-running'
     | 'auto-recreate-disabled'
+    | 'operation-locked'
     | 'rollover-not-due'
     | 'rollover-complete'
     | 'recovery-from-snapshot'
@@ -101,6 +116,23 @@ function getNetworkBytes(sandbox: Sandbox) {
   }
 
   return sandbox.networkTransfer.ingress + sandbox.networkTransfer.egress;
+}
+
+async function withSandboxOperationLease<T>(
+  type: SandboxOperationType,
+  onLocked: () => Promise<T>,
+  task: () => Promise<T>,
+) {
+  const lease = await acquireSandboxOperationLease(type, OPERATION_LEASE_TTLS_MS[type]);
+  if (!lease) {
+    return await onLocked();
+  }
+
+  try {
+    return await task();
+  } finally {
+    await releaseSandboxOperationLease(lease.owner).catch(() => {});
+  }
 }
 
 function isSandboxGoneError(error: unknown) {
@@ -471,6 +503,32 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
   sessions: SessionRecord[];
   commands: CommandRecord[];
 }> {
+  const currentState = await readDashboardState();
+  const currentSandbox = currentState.sandbox;
+
+  if (currentSandbox && (await isOpenClawSandboxRunning(currentSandbox.sandboxId))) {
+    const synced = await syncOpenClawSessions(currentSandbox.sandboxId, settings).catch(() => null);
+
+    return {
+      sandboxRecord: synced
+        ? {
+            ...currentSandbox,
+            ...synced.sandbox,
+            openClawVersion: currentSandbox.openClawVersion ?? synced.sandbox.openClawVersion,
+            errorMessage: null,
+            updatedAt: Date.now(),
+          }
+        : {
+            ...currentSandbox,
+            status: 'running',
+            errorMessage: null,
+            updatedAt: Date.now(),
+          },
+      sessions: synced?.sessions ?? currentState.sessions,
+      commands: synced?.commands ?? [],
+    };
+  }
+
   const snapshotRecord = await loadStoredSnapshot();
   const storedSnapshot = getRestorableSnapshot(snapshotRecord);
 
@@ -639,11 +697,27 @@ export async function syncOpenClawSessions(
     }
 
     let parsed: { sessions?: Record<string, unknown>[] };
+    const trimmedStdout = rawStdout.trim();
 
     try {
-      parsed = rawStdout ? (JSON.parse(rawStdout) as { sessions?: Record<string, unknown>[] }) : {};
+      parsed = trimmedStdout
+        ? (JSON.parse(trimmedStdout) as { sessions?: Record<string, unknown>[] })
+        : {};
     } catch {
-      throw new Error('OpenClaw returned invalid JSON for session sync.');
+      const jsonStart = trimmedStdout.indexOf('{');
+      const jsonEnd = trimmedStdout.lastIndexOf('}');
+
+      if (jsonStart < 0 || jsonEnd <= jsonStart) {
+        throw new Error('OpenClaw returned invalid JSON for session sync.');
+      }
+
+      try {
+        parsed = JSON.parse(trimmedStdout.slice(jsonStart, jsonEnd + 1)) as {
+          sessions?: Record<string, unknown>[];
+        };
+      } catch {
+        throw new Error('OpenClaw returned invalid JSON for session sync.');
+      }
     }
 
     const sessions = Array.isArray(parsed.sessions)
@@ -783,136 +857,161 @@ export async function reconcileOpenClawSandboxLifecycle() {
   }
 
   lifecycleReconcile = (async () => {
-    try {
-      const state = await readDashboardState();
+    return await withSandboxOperationLease<LifecycleReconcileResult>(
+      'reconcile',
+      async () => {
+        const state = await readDashboardState();
 
-      if (!state.settings.autoRecreateSandbox) {
         return {
           status: 'skipped',
-          reason: 'auto-recreate-disabled',
+          reason: 'operation-locked',
           sandboxId: state.sandbox?.sandboxId ?? null,
           previousSandboxId: state.sandbox?.sandboxId ?? null,
         } satisfies LifecycleReconcileResult;
-      }
-
-      const previousSandboxId = state.sandbox?.sandboxId ?? null;
-      const previousSnapshot = await loadStoredSnapshot();
-      const hasLiveSandbox = previousSandboxId
-        ? await isOpenClawSandboxRunning(previousSandboxId)
-        : false;
-
-      if (hasLiveSandbox && state.sandbox) {
-        const timeoutMs = getSandboxTimeoutMs(state.settings);
-        const rolloverAt = state.sandbox.startedAt + timeoutMs - getRolloverWindowMs(timeoutMs);
-
-        if (Date.now() < rolloverAt) {
-          return {
-            status: 'skipped',
-            reason: 'rollover-not-due',
-            sandboxId: state.sandbox.sandboxId,
-            previousSandboxId: state.sandbox.sandboxId,
-          } satisfies LifecycleReconcileResult;
-        }
-
-        let preRolloverSync: Awaited<ReturnType<typeof syncOpenClawSessions>> | null = null;
-
+      },
+      async () => {
         try {
-          preRolloverSync = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
-        } catch {}
+          const state = await readDashboardState();
 
-        let snapshotCommand: CommandRecord | null = null;
+          if (!state.settings.autoRecreateSandbox) {
+            return {
+              status: 'skipped',
+              reason: 'auto-recreate-disabled',
+              sandboxId: state.sandbox?.sandboxId ?? null,
+              previousSandboxId: state.sandbox?.sandboxId ?? null,
+            } satisfies LifecycleReconcileResult;
+          }
 
-        try {
-          snapshotCommand = await snapshotOpenClawSandbox(state.sandbox.sandboxId, state.settings);
-        } catch {}
+          const previousSandboxId = state.sandbox?.sandboxId ?? null;
+          const previousSnapshot = await loadStoredSnapshot();
+          const hasLiveSandbox = previousSandboxId
+            ? await isOpenClawSandboxRunning(previousSandboxId)
+            : false;
 
-        const { sandboxRecord, sessions, commands } = await createOpenClawSandbox(state.settings);
-        const nextCommands = [...(snapshotCommand ? [snapshotCommand] : []), ...commands];
+          if (hasLiveSandbox && state.sandbox) {
+            const timeoutMs = getSandboxTimeoutMs(state.settings);
+            const rolloverAt = state.sandbox.startedAt + timeoutMs - getRolloverWindowMs(timeoutMs);
 
-        await updateDashboardState((current) => ({
-          ...current,
-          sandbox: {
-            ...sandboxRecord,
-            lastSnapshotAt: snapshotCommand?.finishedAt ?? sandboxRecord.lastSnapshotAt,
-          },
-          sessions,
-          commands: [...(preRolloverSync?.commands ?? []), ...nextCommands].reduce(
-            (items, command) => appendCommand(items, command),
-            current.commands,
-          ),
-          usage: preRolloverSync
-            ? appendUsage(current.usage, {
-                source: 'sandbox',
-                creditsRemaining: null,
-                creditsUsed: null,
-                cpuMs: preRolloverSync.sandbox.activeCpuUsageMs,
-                networkBytes: preRolloverSync.sandbox.networkBytes,
-                recordedAt: Date.now(),
-              })
-            : current.usage,
-        }));
-
-        if (sandboxRecord.sandboxId !== state.sandbox.sandboxId) {
-          await stopOpenClawSandbox(state.sandbox.sandboxId).catch(() => {});
-        }
-
-        if (previousSnapshot && previousSnapshot.snapshotId !== sandboxRecord.sourceSnapshotId) {
-          await deleteRemoteSnapshot(previousSnapshot.snapshotId);
-        }
-
-        return {
-          status: 'recreated',
-          reason: 'rollover-complete',
-          sandboxId: sandboxRecord.sandboxId,
-          previousSandboxId: state.sandbox.sandboxId,
-        } satisfies LifecycleReconcileResult;
-      }
-
-      const { sandboxRecord, sessions, commands } = await createOpenClawSandbox(state.settings);
-
-      await updateDashboardState((current) => ({
-        ...current,
-        sandbox: sandboxRecord,
-        sessions,
-        commands: commands.reduce(
-          (items, command) => appendCommand(items, command),
-          current.commands,
-        ),
-      }));
-
-      if (previousSandboxId && sandboxRecord.sandboxId !== previousSandboxId) {
-        await stopOpenClawSandbox(previousSandboxId).catch(() => {});
-      }
-
-      if (previousSnapshot && previousSnapshot.snapshotId !== sandboxRecord.sourceSnapshotId) {
-        await deleteRemoteSnapshot(previousSnapshot.snapshotId);
-      }
-
-      return {
-        status: 'recreated',
-        reason: sandboxRecord.sourceSnapshotId ? 'recovery-from-snapshot' : 'recovery-clean-start',
-        sandboxId: sandboxRecord.sandboxId,
-        previousSandboxId,
-      } satisfies LifecycleReconcileResult;
-    } catch (error) {
-      const state = await readDashboardState();
-      await updateDashboardState((current) => ({
-        ...current,
-        sandbox: current.sandbox
-          ? {
-              ...current.sandbox,
-              status: 'error',
-              errorMessage:
-                redactSecrets(
-                  error instanceof Error ? error.message : 'Sandbox rollover failed.',
-                  state.settings,
-                ) ?? 'Sandbox rollover failed.',
-              updatedAt: Date.now(),
+            if (Date.now() < rolloverAt) {
+              return {
+                status: 'skipped',
+                reason: 'rollover-not-due',
+                sandboxId: state.sandbox.sandboxId,
+                previousSandboxId: state.sandbox.sandboxId,
+              } satisfies LifecycleReconcileResult;
             }
-          : null,
-      }));
-      throw error;
-    }
+
+            let preRolloverSync: Awaited<ReturnType<typeof syncOpenClawSessions>> | null = null;
+
+            try {
+              preRolloverSync = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
+            } catch {}
+
+            let snapshotCommand: CommandRecord | null = null;
+
+            try {
+              snapshotCommand = await snapshotOpenClawSandbox(
+                state.sandbox.sandboxId,
+                state.settings,
+              );
+            } catch {}
+
+            const { sandboxRecord, sessions, commands } = await createOpenClawSandbox(
+              state.settings,
+            );
+            const nextCommands = [...(snapshotCommand ? [snapshotCommand] : []), ...commands];
+
+            await updateDashboardState((current) => ({
+              ...current,
+              sandbox: {
+                ...sandboxRecord,
+                lastSnapshotAt: snapshotCommand?.finishedAt ?? sandboxRecord.lastSnapshotAt,
+              },
+              sessions,
+              commands: [...(preRolloverSync?.commands ?? []), ...nextCommands].reduce(
+                (items, command) => appendCommand(items, command),
+                current.commands,
+              ),
+              usage: preRolloverSync
+                ? appendUsage(current.usage, {
+                    source: 'sandbox',
+                    creditsRemaining: null,
+                    creditsUsed: null,
+                    cpuMs: preRolloverSync.sandbox.activeCpuUsageMs,
+                    networkBytes: preRolloverSync.sandbox.networkBytes,
+                    recordedAt: Date.now(),
+                  })
+                : current.usage,
+            }));
+
+            if (sandboxRecord.sandboxId !== state.sandbox.sandboxId) {
+              await stopOpenClawSandbox(state.sandbox.sandboxId).catch(() => {});
+            }
+
+            if (
+              previousSnapshot &&
+              previousSnapshot.snapshotId !== sandboxRecord.sourceSnapshotId
+            ) {
+              await deleteRemoteSnapshot(previousSnapshot.snapshotId);
+            }
+
+            return {
+              status: 'recreated',
+              reason: 'rollover-complete',
+              sandboxId: sandboxRecord.sandboxId,
+              previousSandboxId: state.sandbox.sandboxId,
+            } satisfies LifecycleReconcileResult;
+          }
+
+          const { sandboxRecord, sessions, commands } = await createOpenClawSandbox(state.settings);
+
+          await updateDashboardState((current) => ({
+            ...current,
+            sandbox: sandboxRecord,
+            sessions,
+            commands: commands.reduce(
+              (items, command) => appendCommand(items, command),
+              current.commands,
+            ),
+          }));
+
+          if (previousSandboxId && sandboxRecord.sandboxId !== previousSandboxId) {
+            await stopOpenClawSandbox(previousSandboxId).catch(() => {});
+          }
+
+          if (previousSnapshot && previousSnapshot.snapshotId !== sandboxRecord.sourceSnapshotId) {
+            await deleteRemoteSnapshot(previousSnapshot.snapshotId);
+          }
+
+          return {
+            status: 'recreated',
+            reason: sandboxRecord.sourceSnapshotId
+              ? 'recovery-from-snapshot'
+              : 'recovery-clean-start',
+            sandboxId: sandboxRecord.sandboxId,
+            previousSandboxId,
+          } satisfies LifecycleReconcileResult;
+        } catch (error) {
+          const state = await readDashboardState();
+          await updateDashboardState((current) => ({
+            ...current,
+            sandbox: current.sandbox
+              ? {
+                  ...current.sandbox,
+                  status: 'error',
+                  errorMessage:
+                    redactSecrets(
+                      error instanceof Error ? error.message : 'Sandbox rollover failed.',
+                      state.settings,
+                    ) ?? 'Sandbox rollover failed.',
+                  updatedAt: Date.now(),
+                }
+              : null,
+          }));
+          throw error;
+        }
+      },
+    );
   })().finally(() => {
     lifecycleReconcile = null;
   });

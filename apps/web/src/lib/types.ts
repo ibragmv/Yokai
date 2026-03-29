@@ -1,4 +1,12 @@
 export type SandboxStatus = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
+export type SandboxOperationType = 'start' | 'stop' | 'sync' | 'reconcile';
+
+export type SandboxOperationLease = {
+  owner: string;
+  type: SandboxOperationType;
+  acquiredAt: number;
+  expiresAt: number;
+};
 
 export type SettingsFormValues = {
   displayName: string;
@@ -85,6 +93,7 @@ export type DashboardPayload = {
   settings: DashboardPublicSettings;
   sandbox: SandboxRecord | null;
   storedSnapshot: StoredSnapshotRecord | null;
+  operationLease?: SandboxOperationLease | null;
   sessions: SessionRecord[];
   commands: CommandRecord[];
   usage: UsageSnapshot[];

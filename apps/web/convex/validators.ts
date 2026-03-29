@@ -37,6 +37,13 @@ export const snapshotValueValidator = v.object({
 
 export const storedSnapshotValidator = v.union(snapshotValueValidator, v.null());
 
+export const sandboxOperationLeaseValidator = v.object({
+  owner: v.string(),
+  type: v.union(v.literal('start'), v.literal('stop'), v.literal('sync'), v.literal('reconcile')),
+  acquiredAt: v.number(),
+  expiresAt: v.number(),
+});
+
 export const snapshotRecordValidator = v.object({
   _id: v.id('snapshots'),
   _creationTime: v.number(),
@@ -109,6 +116,7 @@ export const dashboardStatePayloadValidator = v.object({
   settings: settingsValidator,
   encryptedSettings: encryptedSettingsValidator,
   sandbox: sandboxValidator,
+  operationLease: v.optional(v.union(sandboxOperationLeaseValidator, v.null())),
   // Legacy compatibility for older `states` rows before snapshot data moved
   // into the dedicated `snapshots` table.
   storedSnapshot: v.optional(storedSnapshotValidator),
@@ -123,6 +131,11 @@ export const dashboardStateRecordValidator = v.object({
   key: v.string(),
   payload: dashboardStatePayloadValidator,
   updatedAt: v.number(),
+});
+
+export const leaseAcquireResultValidator = v.object({
+  acquired: v.boolean(),
+  lease: v.union(sandboxOperationLeaseValidator, v.null()),
 });
 
 export const bootstrapStatusValidator = v.object({

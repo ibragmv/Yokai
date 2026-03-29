@@ -14,10 +14,22 @@ import {
   syncOpenClawSessions,
 } from '@/lib/sandbox/openclaw';
 import { redactSecrets } from '@/lib/security/redaction';
-import { appendCommand, appendUsage, readDashboardState, updateDashboardState } from '@/lib/store';
+import {
+  acquireSandboxOperationLease,
+  appendCommand,
+  appendUsage,
+  readDashboardState,
+  releaseSandboxOperationLease,
+  updateDashboardState,
+} from '@/lib/store';
 import type { DashboardActionResult, SettingsFormValues } from '@/lib/types';
 
 type SandboxAction = 'start' | 'stop' | 'sync';
+const ACTION_LEASE_TTLS_MS: Record<SandboxAction, number> = {
+  start: 10 * 60_000,
+  stop: 4 * 60_000,
+  sync: 90_000,
+};
 
 function keepSecret(nextValue: string, currentValue: string): string {
   if (!nextValue || nextValue.includes('••••')) {
@@ -98,131 +110,141 @@ export async function saveSettingsAction(
 
 export async function runSandboxAction(action: SandboxAction): Promise<DashboardActionResult> {
   await requireAdminSession();
-  const state = await readDashboardState();
+  const lease = await acquireSandboxOperationLease(action, ACTION_LEASE_TTLS_MS[action]);
 
-  if (action === 'start' && state.sandbox?.status === 'running') {
-    const isRunning = await isOpenClawSandboxRunning(state.sandbox.sandboxId);
-
-    if (isRunning) {
-      return getResult(true, 'Sandbox is already running.');
-    }
-  }
-
-  if (!state.sandbox && action !== 'start') {
-    return getResult(false, 'There is no sandbox to manage yet.');
+  if (!lease) {
+    return getResult(false, 'Another sandbox operation is already running.');
   }
 
   try {
-    if (action === 'start') {
-      const { sandboxRecord, sessions, commands } = await createOpenClawSandbox(state.settings);
-      await updateDashboardState((current) => ({
-        ...current,
-        sandbox: sandboxRecord,
-        sessions,
-        commands: commands.reduce(
-          (items, command) => appendCommand(items, command),
-          current.commands,
-        ),
-      }));
+    const state = await readDashboardState();
 
-      if (sandboxRecord.status === 'error') {
-        return getResult(false, sandboxRecord.errorMessage ?? 'Sandbox failed to become ready.');
+    if (action === 'start' && state.sandbox?.status === 'running') {
+      const isRunning = await isOpenClawSandboxRunning(state.sandbox.sandboxId);
+
+      if (isRunning) {
+        return getResult(true, 'Sandbox is already running.');
       }
     }
 
-    if (action === 'stop' && state.sandbox) {
-      let synced: Awaited<ReturnType<typeof syncOpenClawSessions>> | null = null;
+    if (!state.sandbox && action !== 'start') {
+      return getResult(false, 'There is no sandbox to manage yet.');
+    }
 
-      try {
-        synced = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
-      } catch {}
+    try {
+      if (action === 'start') {
+        const { sandboxRecord, sessions, commands } = await createOpenClawSandbox(state.settings);
+        await updateDashboardState((current) => ({
+          ...current,
+          sandbox: sandboxRecord,
+          sessions,
+          commands: commands.reduce(
+            (items, command) => appendCommand(items, command),
+            current.commands,
+          ),
+        }));
 
-      const snapshotCommand = await snapshotOpenClawSandbox(
-        state.sandbox.sandboxId,
-        state.settings,
-      );
-      await stopOpenClawSandbox(state.sandbox.sandboxId);
+        if (sandboxRecord.status === 'error') {
+          return getResult(false, sandboxRecord.errorMessage ?? 'Sandbox failed to become ready.');
+        }
+      }
+
+      if (action === 'stop' && state.sandbox) {
+        let synced: Awaited<ReturnType<typeof syncOpenClawSessions>> | null = null;
+
+        try {
+          synced = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
+        } catch {}
+
+        const snapshotCommand = await snapshotOpenClawSandbox(
+          state.sandbox.sandboxId,
+          state.settings,
+        );
+        await stopOpenClawSandbox(state.sandbox.sandboxId);
+        await updateDashboardState((current) => ({
+          ...current,
+          sessions: synced?.sessions ?? current.sessions,
+          commands: [...(synced?.commands ?? []), snapshotCommand].reduce(
+            (commands, command) => appendCommand(commands, command),
+            current.commands,
+          ),
+          usage: synced
+            ? appendUsage(current.usage, {
+                source: 'sandbox',
+                creditsRemaining: null,
+                creditsUsed: null,
+                cpuMs: synced.sandbox.activeCpuUsageMs,
+                networkBytes: synced.sandbox.networkBytes,
+                recordedAt: Date.now(),
+              })
+            : current.usage,
+          sandbox: current.sandbox
+            ? {
+                ...(synced?.sandbox ?? current.sandbox),
+                status: 'stopped',
+                gatewayUrl: null,
+                errorMessage: null,
+                expiresAt: null,
+                lastSnapshotAt: snapshotCommand.finishedAt ?? current.sandbox.lastSnapshotAt,
+                updatedAt: Date.now(),
+              }
+            : null,
+        }));
+      }
+
+      if (action === 'sync' && state.sandbox) {
+        const synced = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
+        await updateDashboardState((current) => ({
+          ...current,
+          sandbox: synced.sandbox,
+          sessions: synced.sessions,
+          commands: synced.commands.reduce(
+            (commands, command) => appendCommand(commands, command),
+            current.commands,
+          ),
+          usage: appendUsage(current.usage, {
+            source: 'sandbox',
+            creditsRemaining: null,
+            creditsUsed: null,
+            cpuMs: synced.sandbox.activeCpuUsageMs,
+            networkBytes: synced.sandbox.networkBytes,
+            recordedAt: Date.now(),
+          }),
+        }));
+
+        if (synced.sandbox.status !== 'running') {
+          return getResult(false, synced.sandbox.errorMessage ?? 'Sandbox is no longer running.');
+        }
+      }
+
+      await recordGatewayCredits();
+
+      const message =
+        action === 'start'
+          ? 'Sandbox started.'
+          : action === 'stop'
+            ? 'Sandbox stopped.'
+            : 'Sandbox state synced.';
+
+      return getResult(true, message);
+    } catch (error) {
+      const message = sanitizeActionError(error, state.settings) ?? 'Sandbox action failed.';
+
       await updateDashboardState((current) => ({
         ...current,
-        sessions: synced?.sessions ?? current.sessions,
-        commands: [...(synced?.commands ?? []), snapshotCommand].reduce(
-          (commands, command) => appendCommand(commands, command),
-          current.commands,
-        ),
-        usage: synced
-          ? appendUsage(current.usage, {
-              source: 'sandbox',
-              creditsRemaining: null,
-              creditsUsed: null,
-              cpuMs: synced.sandbox.activeCpuUsageMs,
-              networkBytes: synced.sandbox.networkBytes,
-              recordedAt: Date.now(),
-            })
-          : current.usage,
         sandbox: current.sandbox
           ? {
-              ...(synced?.sandbox ?? current.sandbox),
-              status: 'stopped',
-              gatewayUrl: null,
-              errorMessage: null,
-              expiresAt: null,
-              lastSnapshotAt: snapshotCommand.finishedAt ?? current.sandbox.lastSnapshotAt,
+              ...current.sandbox,
+              status: 'error',
+              errorMessage: message,
               updatedAt: Date.now(),
             }
           : null,
       }));
+
+      return getResult(false, message);
     }
-
-    if (action === 'sync' && state.sandbox) {
-      const synced = await syncOpenClawSessions(state.sandbox.sandboxId, state.settings);
-      await updateDashboardState((current) => ({
-        ...current,
-        sandbox: synced.sandbox,
-        sessions: synced.sessions,
-        commands: synced.commands.reduce(
-          (commands, command) => appendCommand(commands, command),
-          current.commands,
-        ),
-        usage: appendUsage(current.usage, {
-          source: 'sandbox',
-          creditsRemaining: null,
-          creditsUsed: null,
-          cpuMs: synced.sandbox.activeCpuUsageMs,
-          networkBytes: synced.sandbox.networkBytes,
-          recordedAt: Date.now(),
-        }),
-      }));
-
-      if (synced.sandbox.status !== 'running') {
-        return getResult(false, synced.sandbox.errorMessage ?? 'Sandbox is no longer running.');
-      }
-    }
-
-    await recordGatewayCredits();
-
-    const message =
-      action === 'start'
-        ? 'Sandbox started.'
-        : action === 'stop'
-          ? 'Sandbox stopped.'
-          : 'Sandbox state synced.';
-
-    return getResult(true, message);
-  } catch (error) {
-    const message = sanitizeActionError(error, state.settings) ?? 'Sandbox action failed.';
-
-    await updateDashboardState((current) => ({
-      ...current,
-      sandbox: current.sandbox
-        ? {
-            ...current.sandbox,
-            status: 'error',
-            errorMessage: message,
-            updatedAt: Date.now(),
-          }
-        : null,
-    }));
-
-    return getResult(false, message);
+  } finally {
+    await releaseSandboxOperationLease(lease.owner).catch(() => {});
   }
 }

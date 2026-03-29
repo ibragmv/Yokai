@@ -8,6 +8,8 @@ import { decryptValue, encryptValue } from '@/lib/security/crypto';
 import type {
   CommandRecord,
   DashboardSettings,
+  SandboxOperationLease,
+  SandboxOperationType,
   SandboxRecord,
   SessionRecord,
   StoredSnapshotRecord,
@@ -19,6 +21,7 @@ import { api } from '@convex/_generated/api';
 export type DashboardState = {
   settings: DashboardSettings;
   sandbox: SandboxRecord | null;
+  operationLease: SandboxOperationLease | null;
   sessions: SessionRecord[];
   commands: CommandRecord[];
   usage: UsageSnapshot[];
@@ -51,6 +54,7 @@ type PersistedDashboardState = {
   settings: Omit<DashboardSettings, SecretSettingKey>;
   encryptedSettings: Record<SecretSettingKey, EncryptedField>;
   sandbox: SandboxRecord | null;
+  operationLease: SandboxOperationLease | null;
   sessions: SessionRecord[];
   commands: CommandRecord[];
   usage: UsageSnapshot[];
@@ -58,11 +62,12 @@ type PersistedDashboardState = {
 
 type LegacyPersistedDashboardState = Omit<
   PersistedDashboardState,
-  'settings' | 'encryptedSettings' | 'sandbox'
+  'settings' | 'encryptedSettings' | 'sandbox' | 'operationLease'
 > & {
   settings: LegacySettings;
   encryptedSettings?: Partial<Record<SecretSettingKey, EncryptedField>>;
   sandbox: LegacySandboxRecord | null;
+  operationLease?: SandboxOperationLease | null;
   storedSnapshot?: LegacyStoredSnapshotRecord | null;
 };
 
@@ -104,6 +109,7 @@ function createDefaultState(): DashboardState {
       updatedAt: null,
     },
     sandbox: null,
+    operationLease: null,
     sessions: [],
     commands: [],
     usage: [],
@@ -147,6 +153,7 @@ async function serializeState(state: DashboardState): Promise<PersistedDashboard
     settings: plainSettings,
     encryptedSettings,
     sandbox: state.sandbox,
+    operationLease: state.operationLease,
     sessions: state.sessions,
     commands: state.commands,
     usage: state.usage,
@@ -185,6 +192,7 @@ async function deserializeState(payload: LegacyPersistedDashboardState): Promise
           lastSnapshotAt: payload.sandbox.lastSnapshotAt ?? null,
         }
       : null,
+    operationLease: payload.operationLease ?? null,
     sessions: payload.sessions,
     commands: payload.commands,
     usage: payload.usage,
@@ -209,6 +217,7 @@ function normalizeState(input: Partial<DashboardState> | null | undefined): Dash
           lastSnapshotAt: input.sandbox.lastSnapshotAt ?? null,
         }
       : fallback.sandbox,
+    operationLease: input?.operationLease ?? fallback.operationLease,
     sessions: Array.isArray(input?.sessions) ? input.sessions : fallback.sessions,
     commands: Array.isArray(input?.commands) ? input.commands : fallback.commands,
     usage: Array.isArray(input?.usage) ? input.usage : fallback.usage,
@@ -257,6 +266,29 @@ export async function updateDashboardState(
 
   await writeQueue;
   return updatedState ?? readDashboardState();
+}
+
+export async function acquireSandboxOperationLease(
+  type: SandboxOperationType,
+  ttlMs: number,
+): Promise<SandboxOperationLease | null> {
+  await readDashboardState();
+  const owner = randomUUID();
+  const result = await fetchMutation(api.dashboard.acquireOperationLease, {
+    key: STATE_KEY,
+    owner,
+    type,
+    ttlMs,
+  });
+
+  return result.acquired && result.lease ? result.lease : null;
+}
+
+export async function releaseSandboxOperationLease(owner: string) {
+  await fetchMutation(api.dashboard.releaseOperationLease, {
+    key: STATE_KEY,
+    owner,
+  });
 }
 
 export function appendCommand(

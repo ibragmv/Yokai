@@ -34,6 +34,7 @@ export async function loadDashboardPayload(): Promise<DashboardPayload> {
     settings: sanitizeSettings(state.settings),
     sandbox: state.sandbox,
     storedSnapshot,
+    operationLease: state.operationLease,
     sessions: [...state.sessions].sort((left, right) => right.updatedAt - left.updatedAt),
     commands: [...state.commands].sort((left, right) => right.startedAt - left.startedAt),
     usage: [...state.usage].sort((left, right) => right.recordedAt - left.recordedAt),

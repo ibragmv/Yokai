@@ -49,17 +49,9 @@ function countCsvValues(value: string) {
     .filter(Boolean).length;
 }
 
-function formatUsageValue(snapshot: UsageSnapshot) {
-  if (snapshot.source === 'ai-gateway') {
-    return snapshot.creditsRemaining ?? snapshot.creditsUsed ?? 0;
-  }
-
-  return snapshot.cpuMs ?? 0;
-}
-
 function formatBytes(value: number | null) {
   if (typeof value !== 'number') {
-    return 'No network sample';
+    return 'No sample';
   }
 
   if (value < 1024) {
@@ -73,9 +65,25 @@ function formatBytes(value: number | null) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatTokenCount(value: number | null) {
+  return typeof value === 'number' ? value.toLocaleString() : 'No tokens';
+}
+
+function formatCpu(value: number | null) {
+  return typeof value === 'number' ? `${value.toLocaleString()} ms` : 'No sample';
+}
+
+function formatUsageValue(snapshot: UsageSnapshot) {
+  if (snapshot.source === 'ai-gateway') {
+    return snapshot.creditsRemaining ?? snapshot.creditsUsed ?? 0;
+  }
+
+  return snapshot.cpuMs ?? 0;
+}
+
 function formatSnapshotLabel(snapshotId: string | null | undefined) {
   if (!snapshotId) {
-    return 'No snapshot';
+    return 'None';
   }
 
   if (snapshotId.length <= 16) {
@@ -85,17 +93,9 @@ function formatSnapshotLabel(snapshotId: string | null | undefined) {
   return `${snapshotId.slice(0, 8)}…${snapshotId.slice(-6)}`;
 }
 
-function formatRestoreSourceLabel(snapshotId: string | null | undefined) {
-  if (!snapshotId) {
-    return 'Clean boot';
-  }
-
-  return formatSnapshotLabel(snapshotId);
-}
-
 function formatGatewayLabel(url: string | null | undefined) {
   if (!url) {
-    return 'Sandbox gateway appears here after boot.';
+    return 'Not available';
   }
 
   return url.replace(/^https?:\/\//, '');
@@ -104,6 +104,11 @@ function formatGatewayLabel(url: string | null | undefined) {
 function getSnapshotWindowMs(timeoutSeconds: number) {
   const timeoutMs = Math.max(timeoutSeconds, 60) * 1000;
   return Math.min(300_000, Math.max(90_000, Math.floor(timeoutMs * 0.3)));
+}
+
+function parseSectionHash(hash: string): Section | null {
+  const value = hash.replace(/^#/, '');
+  return value === 'overview' || value === 'activity' || value === 'settings' ? value : null;
 }
 
 export function DashboardShell({ initialData }: { initialData: DashboardPayload }) {
@@ -117,17 +122,12 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
   const isDirty = !isSameForm(draft, savedFormValues);
   const allowlistedUsers = countCsvValues(draft.allowedUserIds);
   const allowlistedGroups = countCsvValues(draft.allowedGroupIds);
+  const isRunning = data.sandbox?.status === 'running';
   const nextSnapshotAt =
-    data.sandbox?.status === 'running' && data.sandbox.expiresAt
+    isRunning && data.sandbox?.expiresAt
       ? data.sandbox.expiresAt - getSnapshotWindowMs(data.settings.timeoutSeconds)
       : null;
-  const handoffCopy = data.sandbox
-    ? data.sandbox.status === 'running'
-      ? data.settings.autoRecreateSandbox
-        ? `Managed handoff: final sync and snapshot scheduled before rollover at ${formatRelativeDate(nextSnapshotAt)}.`
-        : 'Managed snapshot is taken on Stop. Auto-rollover is disabled.'
-      : 'Next sandbox will restore from the latest stored snapshot when available.'
-    : 'Start a sandbox to create a live runtime, then Yokai will preserve memory across managed restarts.';
+  const activeLease = data.operationLease;
 
   function applyPayload(payload: DashboardPayload, options?: { preserveDraft?: boolean }) {
     setData(payload);
@@ -161,6 +161,30 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
   });
 
   useEffect(() => {
+    const initialSection = parseSectionHash(window.location.hash);
+    if (initialSection) {
+      setSection(initialSection);
+    }
+
+    const onHashChange = () => {
+      const nextSection = parseSectionHash(window.location.hash);
+      if (nextSection) {
+        setSection(nextSection);
+      }
+    };
+
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    const nextHash = `#${section}`;
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, '', nextHash);
+    }
+  }, [section]);
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
         void refreshLiveData();
@@ -179,8 +203,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
     startTransition(() => {
       void (async () => {
         try {
-          const payload = await readDashboard(isDirty);
-          setNotice(`Live snapshot updated at ${formatRelativeDate(payload.settings.updatedAt)}.`);
+          await readDashboard(isDirty);
+          setNotice('Live snapshot refreshed.');
         } catch (error) {
           setNotice(error instanceof Error ? error.message : 'Failed to refresh dashboard.');
         }
@@ -214,88 +238,62 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
     });
   }
 
-  const heroFacts = [
+  const summaryCards = [
     {
-      label: 'Restore source',
-      value: formatRestoreSourceLabel(data.sandbox?.sourceSnapshotId),
-    },
-    {
-      label: 'Stored snapshot',
-      value: formatSnapshotLabel(data.storedSnapshot?.snapshotId),
-    },
-    {
-      label: 'Allowlist',
-      value: `${allowlistedUsers} users / ${allowlistedGroups} groups`,
-    },
-    {
-      label: 'Sandbox TTL',
-      value: `${Math.max(draft.timeoutSeconds, 60)}s`,
-    },
-    {
-      label: 'Next handoff',
-      value: formatRelativeDate(nextSnapshotAt),
-    },
-  ];
-
-  const stats = [
-    {
-      label: 'Runtime state',
+      label: 'Runtime State',
       value: data.sandbox?.status ?? 'idle',
-      detail: data.sandbox?.runtime ?? 'No sandbox yet',
+      detail: data.sandbox?.sandboxId ?? 'No sandbox yet',
     },
     {
-      label: 'Tracked sessions',
+      label: 'Tracked Sessions',
       value: String(data.sessions.length),
       detail: data.sessions[0] ? formatRelativeDate(data.sessions[0].updatedAt) : 'No session data',
     },
     {
-      label: 'Recent commands',
-      value: String(data.commands.length),
-      detail: data.commands[0] ? formatRelativeDate(data.commands[0].startedAt) : 'No command log',
+      label: 'Stored Snapshot',
+      value: formatSnapshotLabel(data.storedSnapshot?.snapshotId),
+      detail: formatRelativeDate(data.storedSnapshot?.updatedAt ?? null),
     },
     {
-      label: 'Gateway model',
-      value: draft.defaultModel.split('/').at(-1) ?? draft.defaultModel,
-      detail: draft.requireMention ? 'Mention required in groups' : 'Messages accepted directly',
+      label: 'Next Handoff',
+      value: formatRelativeDate(nextSnapshotAt),
+      detail: `${Math.max(draft.timeoutSeconds, 60)} second TTL`,
     },
   ];
 
-  const runtimeDetails = [
+  const runtimeFacts = [
     {
       label: 'Gateway URL',
       value: data.sandbox?.gatewayUrl ?? 'Not running',
     },
     {
-      label: 'OpenClaw version',
-      value: data.sandbox?.openClawVersion ?? 'Unknown version',
+      label: 'OpenClaw Version',
+      value: data.sandbox?.openClawVersion ?? 'Unknown',
     },
     {
-      label: 'Snapshot restore',
-      value: formatRestoreSourceLabel(data.sandbox?.sourceSnapshotId),
+      label: 'Restore Source',
+      value: formatSnapshotLabel(data.sandbox?.sourceSnapshotId),
     },
     {
-      label: 'Stored snapshot',
-      value: formatSnapshotLabel(data.storedSnapshot?.snapshotId),
-    },
-    {
-      label: 'Expires',
-      value: formatRelativeDate(data.sandbox?.expiresAt ?? null),
-    },
-    {
-      label: 'CPU usage',
-      value:
-        typeof data.sandbox?.activeCpuUsageMs === 'number'
-          ? `${data.sandbox.activeCpuUsageMs} ms`
-          : 'No CPU sample',
-    },
-    {
-      label: 'Network traffic',
+      label: 'Network',
       value: formatBytes(data.sandbox?.networkBytes ?? null),
+    },
+    {
+      label: 'CPU',
+      value: formatCpu(data.sandbox?.activeCpuUsageMs ?? null),
+    },
+    {
+      label: 'Last Sync',
+      value: formatRelativeDate(data.sandbox?.updatedAt ?? null),
     },
   ];
 
   return (
     <main className="dashboard-page">
+      <a className="skip-link" href="#dashboard-content">
+        Skip to dashboard content
+      </a>
+
       <div className="dashboard-backdrop" />
 
       <section className="dashboard-frame">
@@ -308,55 +306,59 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
               </span>
             </div>
 
-            <p className="eyebrow">OpenClaw sandbox operations</p>
-            <h1>{data.settings.displayName}</h1>
-            <p className="hero-text">
-              Live control room for restore, rollover, gateway health, session telemetry, and the
-              command trail behind every sandbox transition.
-            </p>
-
-            <div className="hero-highlights">
-              {heroFacts.map((fact) => (
-                <div className="hero-chip" key={fact.label}>
-                  <span>{fact.label}</span>
-                  <strong>{fact.value}</strong>
-                </div>
-              ))}
+            <div className="hero-content">
+              <p className="eyebrow">Single sandbox orchestration</p>
+              <h1>{data.settings.displayName}</h1>
+              <p className="hero-text">
+                One control room for the active OpenClaw runtime, rollover state, session sync, and
+                the snapshot handoff that keeps the sandbox recoverable.
+              </p>
             </div>
+
+            <dl className="hero-facts">
+              <div>
+                <dt>Allowlist</dt>
+                <dd>
+                  {allowlistedUsers} users • {allowlistedGroups} groups
+                </dd>
+              </div>
+              <div>
+                <dt>Gateway</dt>
+                <dd>{formatGatewayLabel(data.sandbox?.gatewayUrl)}</dd>
+              </div>
+              <div>
+                <dt>Lease</dt>
+                <dd>
+                  {activeLease
+                    ? `${activeLease.type} in progress until ${formatRelativeDate(activeLease.expiresAt)}`
+                    : 'No background lock'}
+                </dd>
+              </div>
+            </dl>
           </div>
 
-          <div className="hero-side">
+          <aside className="hero-side">
             <div className="status-card">
-              <span className="status-label">Gateway endpoint</span>
-              {data.sandbox?.gatewayUrl ? (
-                <a
-                  className="status-link"
-                  href={data.sandbox.gatewayUrl}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  {formatGatewayLabel(data.sandbox.gatewayUrl)}
-                </a>
-              ) : (
-                <p className="status-copy">{formatGatewayLabel(data.sandbox?.gatewayUrl)}</p>
-              )}
+              <p className="status-label">Current Sandbox</p>
+              <strong className="status-linkish mono">
+                {data.sandbox?.sandboxId ?? 'No sandbox allocated'}
+              </strong>
+              <p className="status-copy">
+                {isRunning
+                  ? `Auto rollover ${draft.autoRecreateSandbox ? 'is enabled' : 'is disabled'}. Next handoff ${formatRelativeDate(nextSnapshotAt)}.`
+                  : 'Start a sandbox to restore state from the latest stored snapshot when available.'}
+              </p>
 
               <div className="status-meta">
                 <div>
-                  <span>Sandbox ID</span>
-                  <strong className="mono">{data.sandbox?.sandboxId ?? 'Not started'}</strong>
+                  <span>Stored Snapshot</span>
+                  <strong>{formatSnapshotLabel(data.storedSnapshot?.snapshotId)}</strong>
                 </div>
                 <div>
-                  <span>Last snapshot</span>
-                  <strong>
-                    {formatRelativeDate(
-                      data.storedSnapshot?.updatedAt ?? data.sandbox?.lastSnapshotAt ?? null,
-                    )}
-                  </strong>
+                  <span>Updated</span>
+                  <strong>{formatRelativeDate(data.sandbox?.updatedAt ?? null)}</strong>
                 </div>
               </div>
-
-              <p className="status-note">{handoffCopy}</p>
             </div>
 
             <div className="action-row">
@@ -370,105 +372,107 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
               </button>
               <button
                 className="secondary-button"
-                disabled={isPending}
+                disabled={isPending || !data.sandbox}
                 onClick={() => executeSandboxAction('sync')}
                 type="button"
               >
-                Sync
+                Sync Sessions
               </button>
               <button
-                className="primary-button"
+                className={isRunning ? 'secondary-button' : 'primary-button'}
                 disabled={isPending}
-                onClick={() => executeSandboxAction('start')}
+                onClick={() => executeSandboxAction(isRunning ? 'stop' : 'start')}
                 type="button"
               >
-                Start sandbox
+                {isRunning ? 'Stop Sandbox' : 'Start Sandbox'}
               </button>
               <form action={logoutAdminAction}>
                 <button className="ghost-link" type="submit">
-                  Sign out
+                  Sign Out
                 </button>
               </form>
             </div>
-          </div>
+          </aside>
         </header>
 
-        <div className="toolbar">
-          <div className="segmented-control" aria-label="Dashboard sections" role="tablist">
-            {(Object.keys(SECTION_LABELS) as Section[]).map((item) => (
-              <button
-                aria-selected={section === item}
-                className="segment"
-                data-active={section === item}
-                key={item}
-                onClick={() => setSection(item)}
-                role="tab"
-                type="button"
-              >
-                {SECTION_LABELS[item]}
-              </button>
-            ))}
-          </div>
+        <nav className="section-nav" aria-label="Dashboard sections">
+          {(Object.keys(SECTION_LABELS) as Section[]).map((item) => (
+            <button
+              className="segment"
+              data-active={section === item}
+              key={item}
+              onClick={() => setSection(item)}
+              type="button"
+            >
+              {SECTION_LABELS[item]}
+            </button>
+          ))}
 
           <div className="toolbar-meta">
-            <span>{isPending ? 'Working…' : 'Auto-refresh every 15s'}</span>
-            <span>{isDirty ? 'Local edits preserved until save' : 'Settings in sync'}</span>
+            <span>{isPending ? 'Working…' : 'Auto refresh every 15 seconds'}</span>
+            <span>{isDirty ? 'Local edits are preserved until save' : 'Settings are in sync'}</span>
           </div>
+        </nav>
+
+        {notice ? (
+          <output aria-live="polite" className="notice-banner">
+            {notice}
+          </output>
+        ) : null}
+
+        {data.sandbox?.errorMessage ? (
+          <div className="alert-banner" role="alert">
+            {data.sandbox.errorMessage}
+          </div>
+        ) : null}
+
+        <div className="stat-grid">
+          {summaryCards.map((card) => (
+            <article className="stat-panel" key={card.label}>
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+              <small>{card.detail}</small>
+            </article>
+          ))}
         </div>
 
-        {notice ? <div className="notice-banner">{notice}</div> : null}
-
-        {section === 'overview' ? (
-          <>
-            <section className="stat-grid">
-              {stats.map((stat) => (
-                <article className="stat-panel" key={stat.label}>
-                  <span>{stat.label}</span>
-                  <strong>{stat.value}</strong>
-                  <small>{stat.detail}</small>
-                </article>
-              ))}
-            </section>
-
-            <section className="content-grid">
-              <article className="surface-card runtime-card">
+        <section className="section-stack" id="dashboard-content">
+          {section === 'overview' ? (
+            <div className="content-grid">
+              <article className="surface-card">
                 <div className="card-heading">
                   <div>
                     <p className="eyebrow">Runtime</p>
-                    <h2>Sandbox envelope</h2>
+                    <h2>Sandbox Envelope</h2>
                   </div>
-                  <button
-                    className="ghost-link"
-                    disabled={isPending || !data.sandbox}
-                    onClick={() => executeSandboxAction('stop')}
-                    type="button"
-                  >
-                    Stop runtime
-                  </button>
                 </div>
 
                 <dl className="data-grid">
-                  {runtimeDetails.map((detail) => (
-                    <div key={detail.label}>
-                      <dt>{detail.label}</dt>
-                      <dd>{detail.value}</dd>
+                  {runtimeFacts.map((fact) => (
+                    <div key={fact.label}>
+                      <dt>{fact.label}</dt>
+                      <dd>{fact.value}</dd>
                     </div>
                   ))}
                 </dl>
 
-                <div className="footer-meta">
-                  <span>
-                    Last sandbox update: {formatRelativeDate(data.sandbox?.updatedAt ?? null)}
-                  </span>
-                  {data.sandbox?.errorMessage ? <span>{data.sandbox.errorMessage}</span> : null}
-                </div>
+                {data.sandbox?.gatewayUrl ? (
+                  <a
+                    className="inline-link"
+                    href={data.sandbox.gatewayUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open Gateway
+                  </a>
+                ) : null}
               </article>
 
               <article className="surface-card">
                 <div className="card-heading">
                   <div>
                     <p className="eyebrow">Usage</p>
-                    <h2>Recent snapshots</h2>
+                    <h2>Recent Samples</h2>
                   </div>
                 </div>
 
@@ -476,13 +480,19 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                   {data.usage.length ? (
                     data.usage.slice(0, 6).map((snapshot) => (
                       <div className="stack-row" key={`${snapshot.source}-${snapshot.recordedAt}`}>
-                        <div>
-                          <strong>{snapshot.source}</strong>
+                        <div className="stack-primary">
+                          <strong>
+                            {snapshot.source === 'ai-gateway' ? 'AI Gateway' : 'Sandbox'}
+                          </strong>
                           <p>{formatRelativeDate(snapshot.recordedAt)}</p>
                         </div>
                         <div className="stack-row-meta">
                           <strong>{formatUsageValue(snapshot)}</strong>
-                          <p>{snapshot.source === 'ai-gateway' ? 'credits left' : 'cpu ms'}</p>
+                          <p>
+                            {snapshot.source === 'ai-gateway'
+                              ? 'credits remaining'
+                              : `${formatBytes(snapshot.networkBytes)} network`}
+                          </p>
                         </div>
                       </div>
                     ))
@@ -491,312 +501,331 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                   )}
                 </div>
               </article>
-            </section>
-          </>
-        ) : null}
+            </div>
+          ) : null}
 
-        {section === 'activity' ? (
-          <section className="content-grid">
-            <article className="surface-card">
-              <div className="card-heading">
-                <div>
-                  <p className="eyebrow">Sessions</p>
-                  <h2>Active and recent agents</h2>
+          {section === 'activity' ? (
+            <div className="content-grid">
+              <article className="surface-card">
+                <div className="card-heading">
+                  <div>
+                    <p className="eyebrow">Sessions</p>
+                    <h2>Tracked Agents</h2>
+                  </div>
                 </div>
-              </div>
 
-              <div className="stack-list">
-                {data.sessions.length ? (
-                  data.sessions.map((session) => (
-                    <div className="stack-row" key={session.sessionKey}>
-                      <div>
-                        <strong className="mono">{session.sessionKey}</strong>
-                        <p>Agent {session.agentId}</p>
-                      </div>
-                      <div className="stack-row-meta">
-                        <strong>{session.model ?? 'Unknown model'}</strong>
-                        <p>
-                          {typeof session.totalTokens === 'number'
-                            ? `${session.totalTokens} total tokens`
-                            : 'No token metrics'}
-                        </p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-copy">Session history appears here after the next sync.</p>
-                )}
-              </div>
-            </article>
-
-            <article className="surface-card">
-              <div className="card-heading">
-                <div>
-                  <p className="eyebrow">Command log</p>
-                  <h2>Sandbox output</h2>
-                </div>
-              </div>
-
-              <div className="command-list">
-                {data.commands.length ? (
-                  data.commands.map((command) => (
-                    <article className="command-card" key={command.cmdId}>
-                      <div className="command-header">
-                        <div>
-                          <strong className="mono">
-                            {command.command} {command.args.join(' ')}
-                          </strong>
-                          <p>{formatRelativeDate(command.startedAt)}</p>
+                <div className="stack-list">
+                  {data.sessions.length ? (
+                    data.sessions.map((session) => (
+                      <div className="stack-row" key={session.sessionKey}>
+                        <div className="stack-primary">
+                          <strong className="mono">{session.sessionKey}</strong>
+                          <p>
+                            Agent {session.agentId} • {formatRelativeDate(session.updatedAt)}
+                          </p>
                         </div>
-                        <span className={`status-pill status-${command.status}`}>
-                          {command.status}
-                        </span>
+                        <div className="stack-row-meta">
+                          <strong>{session.model ?? 'Unknown model'}</strong>
+                          <p>{formatTokenCount(session.totalTokens)} total</p>
+                        </div>
                       </div>
-
-                      {command.stdout ? (
-                        <pre className="terminal-output">{command.stdout}</pre>
-                      ) : null}
-                      {command.stderr ? (
-                        <pre className="terminal-output terminal-error">{command.stderr}</pre>
-                      ) : null}
-
-                      <div className="footer-meta">
-                        <span>Exit code: {command.exitCode ?? 'running'}</span>
-                      </div>
-                    </article>
-                  ))
-                ) : (
-                  <p className="empty-copy">
-                    Tracked commands will appear here after the next action.
-                  </p>
-                )}
-              </div>
-            </article>
-          </section>
-        ) : null}
-
-        {section === 'settings' ? (
-          <section className="settings-layout">
-            <article className="surface-card">
-              <div className="card-heading">
-                <div>
-                  <p className="eyebrow">Access</p>
-                  <h2>Telegram and runtime policy</h2>
+                    ))
+                  ) : (
+                    <p className="empty-copy">Run a sync to load the latest session list.</p>
+                  )}
                 </div>
-              </div>
+              </article>
 
-              <div className="form-grid">
-                <label className="field">
-                  <span>Gateway name</span>
-                  <input
-                    onChange={(event) =>
-                      setDraft((current) => ({ ...current, displayName: event.target.value }))
-                    }
-                    value={draft.displayName}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Telegram bot token</span>
-                  <input
-                    autoComplete="off"
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        telegramBotToken: event.target.value,
-                      }))
-                    }
-                    spellCheck={false}
-                    type="password"
-                    value={draft.telegramBotToken}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Allowed user IDs</span>
-                  <input
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        allowedUserIds: event.target.value,
-                      }))
-                    }
-                    value={draft.allowedUserIds}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Allowed group IDs</span>
-                  <input
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        allowedGroupIds: event.target.value,
-                      }))
-                    }
-                    value={draft.allowedGroupIds}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Sandbox timeout (seconds)</span>
-                  <input
-                    min={60}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        timeoutSeconds: Number(event.target.value) || current.timeoutSeconds,
-                      }))
-                    }
-                    type="number"
-                    value={draft.timeoutSeconds}
-                  />
-                </label>
-
-                <label className="checkbox-field">
-                  <input
-                    checked={draft.autoRecreateSandbox}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        autoRecreateSandbox: event.target.checked,
-                      }))
-                    }
-                    type="checkbox"
-                  />
-                  <span>Auto recreate sandbox before TTL expires</span>
-                </label>
-
-                <label className="checkbox-field">
-                  <input
-                    checked={draft.requireMention}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        requireMention: event.target.checked,
-                      }))
-                    }
-                    type="checkbox"
-                  />
-                  <span>Require mentions in allowlisted groups</span>
-                </label>
-              </div>
-            </article>
-
-            <article className="surface-card">
-              <div className="card-heading">
-                <div>
-                  <p className="eyebrow">Models and credentials</p>
-                  <h2>Gateway configuration</h2>
+              <article className="surface-card">
+                <div className="card-heading">
+                  <div>
+                    <p className="eyebrow">Commands</p>
+                    <h2>Runtime Output</h2>
+                  </div>
                 </div>
-              </div>
 
-              <div className="form-grid">
-                <label className="field">
-                  <span>Default model</span>
-                  <input
-                    list="available-models"
-                    onChange={(event) =>
-                      setDraft((current) => ({ ...current, defaultModel: event.target.value }))
-                    }
-                    value={draft.defaultModel}
-                  />
-                  <datalist id="available-models">
-                    {data.availableModels.map((model) => (
-                      <option key={model} value={model} />
-                    ))}
-                  </datalist>
-                </label>
+                <div className="command-list">
+                  {data.commands.length ? (
+                    data.commands.map((command) => (
+                      <article className="command-card" key={command.cmdId}>
+                        <div className="command-header">
+                          <div className="stack-primary">
+                            <strong className="mono">
+                              {command.command} {command.args.join(' ')}
+                            </strong>
+                            <p>{formatRelativeDate(command.startedAt)}</p>
+                          </div>
+                          <span className={`status-pill status-${command.status}`}>
+                            {command.status}
+                          </span>
+                        </div>
 
-                <label className="field">
-                  <span>Vercel AI Gateway API key</span>
-                  <input
-                    autoComplete="off"
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        aiGatewayApiKey: event.target.value,
-                      }))
-                    }
-                    spellCheck={false}
-                    type="password"
-                    value={draft.aiGatewayApiKey}
-                  />
-                </label>
+                        {command.stdout ? (
+                          <pre className="terminal-output">{command.stdout}</pre>
+                        ) : null}
+                        {command.stderr ? (
+                          <pre className="terminal-output terminal-error">{command.stderr}</pre>
+                        ) : null}
 
-                <label className="field">
-                  <span>Vercel API token</span>
-                  <input
-                    autoComplete="off"
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        vercelApiToken: event.target.value,
-                      }))
-                    }
-                    spellCheck={false}
-                    type="password"
-                    value={draft.vercelApiToken}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Project ID</span>
-                  <input
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        vercelProjectId: event.target.value,
-                      }))
-                    }
-                    value={draft.vercelProjectId}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Team ID</span>
-                  <input
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        vercelTeamId: event.target.value,
-                      }))
-                    }
-                    value={draft.vercelTeamId}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Gateway auth token</span>
-                  <input
-                    autoComplete="off"
-                    disabled
-                    type="password"
-                    value={data.settings.gatewayAuthToken}
-                  />
-                </label>
-              </div>
-
-              <div className="settings-footer">
-                <div>
-                  <strong>{isDirty ? 'Unsaved changes' : 'Everything saved'}</strong>
-                  <p>
-                    Last saved {formatRelativeDate(data.settings.updatedAt)}. Secrets stay masked in
-                    the UI and encrypted at rest.
-                  </p>
+                        <div className="footer-meta">
+                          <span>Exit code: {command.exitCode ?? 'running'}</span>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="empty-copy">Tracked commands appear after the next action.</p>
+                  )}
                 </div>
-                <button
-                  className="primary-button"
-                  disabled={isPending}
-                  onClick={submitSettings}
-                  type="button"
-                >
-                  {isPending ? 'Saving…' : 'Save settings'}
-                </button>
-              </div>
-            </article>
-          </section>
-        ) : null}
+              </article>
+            </div>
+          ) : null}
+
+          {section === 'settings' ? (
+            <div className="settings-layout">
+              <article className="surface-card">
+                <div className="card-heading">
+                  <div>
+                    <p className="eyebrow">Access & Runtime</p>
+                    <h2>Control Room Settings</h2>
+                  </div>
+                </div>
+
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Gateway Name</span>
+                    <input
+                      autoComplete="off"
+                      name="displayName"
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, displayName: event.target.value }))
+                      }
+                      placeholder="Yokai Control Room…"
+                      value={draft.displayName}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Allowed User IDs</span>
+                    <input
+                      autoComplete="off"
+                      name="allowedUserIds"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          allowedUserIds: event.target.value,
+                        }))
+                      }
+                      placeholder="123, 456…"
+                      spellCheck={false}
+                      value={draft.allowedUserIds}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Allowed Group IDs</span>
+                    <input
+                      autoComplete="off"
+                      name="allowedGroupIds"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          allowedGroupIds: event.target.value,
+                        }))
+                      }
+                      placeholder="-100123, -100456…"
+                      spellCheck={false}
+                      value={draft.allowedGroupIds}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Sandbox Timeout (Seconds)</span>
+                    <input
+                      inputMode="numeric"
+                      min={60}
+                      name="timeoutSeconds"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          timeoutSeconds: Number(event.target.value) || current.timeoutSeconds,
+                        }))
+                      }
+                      type="number"
+                      value={draft.timeoutSeconds}
+                    />
+                  </label>
+
+                  <label className="checkbox-field">
+                    <input
+                      checked={draft.autoRecreateSandbox}
+                      name="autoRecreateSandbox"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          autoRecreateSandbox: event.target.checked,
+                        }))
+                      }
+                      type="checkbox"
+                    />
+                    <span>Auto recreate the sandbox before TTL expires</span>
+                  </label>
+
+                  <label className="checkbox-field">
+                    <input
+                      checked={draft.requireMention}
+                      name="requireMention"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          requireMention: event.target.checked,
+                        }))
+                      }
+                      type="checkbox"
+                    />
+                    <span>Require mentions inside allowlisted groups</span>
+                  </label>
+                </div>
+              </article>
+
+              <article className="surface-card">
+                <div className="card-heading">
+                  <div>
+                    <p className="eyebrow">Gateway & Credentials</p>
+                    <h2>Secrets and Routing</h2>
+                  </div>
+                </div>
+
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Default Model</span>
+                    <input
+                      autoComplete="off"
+                      list="available-models"
+                      name="defaultModel"
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, defaultModel: event.target.value }))
+                      }
+                      placeholder="vercel-ai-gateway/anthropic/…"
+                      spellCheck={false}
+                      value={draft.defaultModel}
+                    />
+                    <datalist id="available-models">
+                      {data.availableModels.map((model) => (
+                        <option key={model} value={model} />
+                      ))}
+                    </datalist>
+                  </label>
+
+                  <label className="field">
+                    <span>Telegram Bot Token</span>
+                    <input
+                      autoComplete="off"
+                      name="telegramBotToken"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          telegramBotToken: event.target.value,
+                        }))
+                      }
+                      placeholder="Leave masked value to keep current token…"
+                      spellCheck={false}
+                      type="password"
+                      value={draft.telegramBotToken}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Vercel AI Gateway API Key</span>
+                    <input
+                      autoComplete="off"
+                      name="aiGatewayApiKey"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          aiGatewayApiKey: event.target.value,
+                        }))
+                      }
+                      placeholder="Leave masked value to keep current key…"
+                      spellCheck={false}
+                      type="password"
+                      value={draft.aiGatewayApiKey}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Vercel API Token</span>
+                    <input
+                      autoComplete="off"
+                      name="vercelApiToken"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          vercelApiToken: event.target.value,
+                        }))
+                      }
+                      placeholder="Leave masked value to keep current token…"
+                      spellCheck={false}
+                      type="password"
+                      value={draft.vercelApiToken}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Project ID</span>
+                    <input
+                      autoComplete="off"
+                      name="vercelProjectId"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          vercelProjectId: event.target.value,
+                        }))
+                      }
+                      placeholder="prj_…"
+                      spellCheck={false}
+                      value={draft.vercelProjectId}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Team ID</span>
+                    <input
+                      autoComplete="off"
+                      name="vercelTeamId"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          vercelTeamId: event.target.value,
+                        }))
+                      }
+                      placeholder="team_…"
+                      spellCheck={false}
+                      value={draft.vercelTeamId}
+                    />
+                  </label>
+                </div>
+
+                <div className="settings-footer">
+                  <div>
+                    <strong>{isDirty ? 'Unsaved changes' : 'Settings saved'}</strong>
+                    <p>
+                      Last saved {formatRelativeDate(data.settings.updatedAt)}. Secrets remain
+                      masked in the UI and encrypted at rest.
+                    </p>
+                  </div>
+                  <button
+                    className="primary-button"
+                    disabled={isPending}
+                    onClick={submitSettings}
+                    type="button"
+                  >
+                    {isPending ? 'Saving…' : 'Save Settings'}
+                  </button>
+                </div>
+              </article>
+            </div>
+          ) : null}
+        </section>
       </section>
     </main>
   );
