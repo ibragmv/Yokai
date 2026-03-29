@@ -214,12 +214,13 @@ function ActivitySection({
       id="panel-activity"
       role="tabpanel"
     >
-      <article className="surface-card">
+      <article className="surface-card session-panel">
         <div className="card-heading">
           <div>
             <p className="eyebrow">Sessions</p>
             <h2>Tracked Agents</h2>
           </div>
+          <span className="panel-note">{sessions.length.toLocaleString()} total</span>
         </div>
 
         <div className="section-scroll">
@@ -246,12 +247,13 @@ function ActivitySection({
         </div>
       </article>
 
-      <article className="surface-card">
+      <article className="surface-card command-panel">
         <div className="card-heading">
           <div>
             <p className="eyebrow">Commands</p>
             <h2>Runtime Output</h2>
           </div>
+          <span className="panel-note">{commands.length.toLocaleString()} entries</span>
         </div>
 
         <div className="section-scroll">
@@ -261,10 +263,10 @@ function ActivitySection({
                 <article className="command-card" key={command.cmdId}>
                   <div className="command-header">
                     <div className="stack-primary">
-                      <strong className="mono">
+                      <strong className="mono command-line">
                         {command.command} {command.args.join(' ')}
                       </strong>
-                      <p>{formatRelativeDate(command.startedAt)}</p>
+                      <p className="command-timestamp">{formatRelativeDate(command.startedAt)}</p>
                     </div>
                     <span className={`status-pill status-${command.status}`}>{command.status}</span>
                   </div>

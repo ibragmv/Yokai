@@ -28,9 +28,7 @@
 
 html {
   min-height: 100%;
-  background: radial-gradient(circle at top left, rgba(86, 134, 219, 0.24), transparent 34%),
-    radial-gradient(circle at top right, rgba(82, 184, 162, 0.14), transparent 28%),
-    linear-gradient(180deg, #08111d 0%, #0b1625 48%, #08111d 100%);
+  background: var(--bg-base);
   background-color: var(--bg-base);
   color: var(--text-primary);
   overflow-x: hidden;
@@ -131,10 +129,8 @@ select:focus-visible {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(circle at 14% 10%, rgba(145, 192, 255, 0.14), transparent 24%),
-    radial-gradient(circle at 85% 12%, rgba(82, 184, 162, 0.12), transparent 20%),
-    radial-gradient(circle at 50% 100%, rgba(244, 168, 177, 0.06), transparent 28%);
-  filter: blur(22px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+  filter: none;
 }
 
 .dashboard-frame {
@@ -255,6 +251,12 @@ select:focus-visible {
 .data-grid dd,
 .mono {
   font-variant-numeric: tabular-nums;
+}
+
+.panel-note {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  white-space: nowrap;
 }
 
 .brand-copy span,
@@ -476,6 +478,19 @@ select:focus-visible {
 
 .activity-grid {
   grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
+  align-items: start;
+}
+
+.activity-grid .surface-card {
+  height: auto;
+}
+
+.activity-grid .session-panel {
+  align-self: start;
+}
+
+.activity-grid .command-panel {
+  height: clamp(26rem, 62vh, 40rem);
 }
 
 .surface-card {
@@ -515,6 +530,7 @@ select:focus-visible {
 .section-scroll {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding-right: 0.35rem;
 }
 
@@ -573,6 +589,14 @@ select:focus-visible {
   align-items: flex-start;
 }
 
+.command-line {
+  line-height: 1.35;
+}
+
+.command-timestamp {
+  font-size: 0.92rem;
+}
+
 .footer-meta {
   display: flex;
   flex-wrap: wrap;
@@ -623,12 +647,12 @@ select:focus-visible {
 .terminal-output {
   margin: 0;
   max-width: 100%;
-  max-height: min(24rem, 48vh);
+  max-height: min(10rem, 22vh);
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border-radius: 18px;
-  padding: 1rem;
+  padding: 0.9rem;
   background: rgba(5, 10, 16, 0.92);
   color: #dbe8f8;
 }
@@ -729,6 +753,7 @@ select:focus-visible {
 
   .hero-panel,
   .surface-card,
+  .section-stack,
   .state-card,
   .stat-panel,
   .notice-banner,
