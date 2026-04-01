@@ -4,7 +4,6 @@ import { Sandbox } from '@vercel/sandbox';
 
 import { buildOpenClawConfig, sandboxEnvironment } from '@/lib/openclaw/config';
 import {
-  clearStoredSnapshot,
   deleteRemoteSnapshot,
   deleteStoredBackupAsset,
   downloadStoredBackupAsset,
@@ -63,7 +62,7 @@ export type LifecycleReconcileResult = {
     | 'operation-locked'
     | 'rollover-not-due'
     | 'rollover-complete'
-    | 'recovery-from-snapshot'
+    | 'recovery-from-backup'
     | 'recovery-clean-start';
   sandboxId: string | null;
   previousSandboxId: string | null;
@@ -76,7 +75,7 @@ type BootSandboxResult = {
   commands: CommandRecord[];
 };
 
-type SnapshotRestoreMode = 'backup' | 'snapshot' | 'clean';
+type SnapshotRestoreMode = 'backup' | 'clean';
 
 let lifecycleReconcile: Promise<LifecycleReconcileResult> | null = null;
 
@@ -146,18 +145,6 @@ function isSandboxGoneError(error: unknown) {
   return (
     /\b410\b/.test(message) || /\bgone\b/i.test(message) || /status code .* not ok/i.test(message)
   );
-}
-
-function getRestorableRemoteSnapshot(snapshot: StoredSnapshotRecord | null) {
-  if (!snapshot?.snapshotId.trim()) {
-    return null;
-  }
-
-  if (snapshot.expiresAt && snapshot.expiresAt <= Date.now()) {
-    return null;
-  }
-
-  return snapshot;
 }
 
 function hasStoredBackup(snapshot: StoredSnapshotRecord | null) {
@@ -300,22 +287,9 @@ async function waitForGatewayReady(
 
 async function createSandboxInstance(
   settings: DashboardSettings,
-  restoredSnapshot: StoredSnapshotRecord | null,
   restoreMode: SnapshotRestoreMode,
 ) {
   const timeout = getSandboxTimeoutMs(settings);
-
-  if (restoreMode === 'snapshot' && restoredSnapshot) {
-    return await Sandbox.create({
-      source: {
-        type: 'snapshot',
-        snapshotId: restoredSnapshot.snapshotId,
-      },
-      ports: [18789],
-      timeout,
-      env: sandboxEnvironment(settings),
-    });
-  }
 
   return await Sandbox.create({
     runtime: DEFAULT_RUNTIME,
@@ -331,101 +305,89 @@ async function bootOpenClawSandbox(
   restoreMode: SnapshotRestoreMode,
   inheritedCommands: CommandRecord[] = [],
 ): Promise<BootSandboxResult> {
-  const sandbox = await createSandboxInstance(settings, restoredSnapshot, restoreMode);
+  const sandbox = await createSandboxInstance(settings, restoreMode);
   try {
     await primeOpenClawWorkspace(sandbox, settings);
 
     const commands = [...inheritedCommands];
     let sessions: SessionRecord[] = [];
 
-    if (restoreMode === 'snapshot' && restoredSnapshot) {
-      commands.push(
-        createSystemCommand(
-          sandbox.sandboxId,
-          'system:restore-snapshot',
-          `Restored sandbox from snapshot ${restoredSnapshot.snapshotId}.`,
-        ),
-      );
-      commands.push(await restoreOpenClawHandoffBundle(sandbox, settings));
-    } else {
-      const installResult = await runTrackedCommand(sandbox, {
-        cmd: 'bash',
-        args: [
-          '-lc',
-          [
-            'export SHARP_IGNORE_GLOBAL_LIBVIPS=1',
-            'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-prompt --no-onboard',
-          ].join(' && '),
-        ],
-        settings,
-      });
+    const installResult = await runTrackedCommand(sandbox, {
+      cmd: 'bash',
+      args: [
+        '-lc',
+        [
+          'export SHARP_IGNORE_GLOBAL_LIBVIPS=1',
+          'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-prompt --no-onboard',
+        ].join(' && '),
+      ],
+      settings,
+    });
 
-      commands.push(installResult);
+    commands.push(installResult);
 
-      if (installResult.status === 'failed') {
+    if (installResult.status === 'failed') {
+      return {
+        sandbox,
+        sandboxRecord: createSandboxRecord(sandbox, {
+          status: 'error',
+          sourceSnapshotId: restoredSnapshot?.snapshotId ?? null,
+          openClawVersion: null,
+          errorMessage:
+            installResult.stderr || installResult.stdout || 'OpenClaw installation failed.',
+          lastSnapshotAt: null,
+        }),
+        sessions,
+        commands,
+      };
+    }
+
+    if (restoreMode === 'backup' && restoredSnapshot?.backupBundleStorageId) {
+      const bundle = await downloadStoredBackupAsset(restoredSnapshot.backupBundleStorageId);
+
+      if (!bundle) {
         return {
           sandbox,
           sandboxRecord: createSandboxRecord(sandbox, {
             status: 'error',
-            sourceSnapshotId: restoredSnapshot?.snapshotId ?? null,
+            sourceSnapshotId: restoredSnapshot.snapshotId,
             openClawVersion: null,
-            errorMessage:
-              installResult.stderr || installResult.stdout || 'OpenClaw installation failed.',
-            lastSnapshotAt: null,
+            errorMessage: 'Convex backup bundle is missing, so the sandbox could not be restored.',
+            lastSnapshotAt: restoredSnapshot.updatedAt,
           }),
           sessions,
           commands,
         };
       }
 
-      if (restoreMode === 'backup' && restoredSnapshot?.backupBundleStorageId) {
-        const bundle = await downloadStoredBackupAsset(restoredSnapshot.backupBundleStorageId);
+      await sandbox.writeFiles([
+        {
+          path: HANDOFF_BUNDLE_PATH,
+          content: bundle,
+        },
+      ]);
 
-        if (!bundle) {
-          return {
-            sandbox,
-            sandboxRecord: createSandboxRecord(sandbox, {
-              status: 'error',
-              sourceSnapshotId: restoredSnapshot.snapshotId,
-              openClawVersion: null,
-              errorMessage:
-                'Convex backup bundle is missing, so the sandbox could not be restored.',
-              lastSnapshotAt: restoredSnapshot.updatedAt,
-            }),
-            sessions,
-            commands,
-          };
-        }
+      const exportedSessions = await downloadStoredBackupAsset(
+        restoredSnapshot.backupSessionsStorageId,
+      ).catch(() => null);
 
+      if (exportedSessions) {
         await sandbox.writeFiles([
           {
-            path: HANDOFF_BUNDLE_PATH,
-            content: bundle,
+            path: HANDOFF_SESSIONS_PATH,
+            content: exportedSessions,
           },
         ]);
-
-        const exportedSessions = await downloadStoredBackupAsset(
-          restoredSnapshot.backupSessionsStorageId,
-        ).catch(() => null);
-
-        if (exportedSessions) {
-          await sandbox.writeFiles([
-            {
-              path: HANDOFF_SESSIONS_PATH,
-              content: exportedSessions,
-            },
-          ]);
-        }
-
-        commands.push(
-          createSystemCommand(
-            sandbox.sandboxId,
-            'system:restore-convex-backup',
-            `Restored OpenClaw handoff bundle from Convex backup for snapshot ${restoredSnapshot.snapshotId}.`,
-          ),
-        );
-        commands.push(await restoreOpenClawHandoffBundle(sandbox, settings));
       }
+
+      commands.push(
+        createSystemCommand(
+          sandbox.sandboxId,
+          'system:restore-convex-backup',
+          `Restored OpenClaw handoff bundle from Convex backup for snapshot ${restoredSnapshot.snapshotId}.`,
+        ),
+      );
+      commands.push(await restoreOpenClawHandoffBundle(sandbox, settings));
     }
 
     const gatewayCommand = await runTrackedCommand(sandbox, {
@@ -526,31 +488,6 @@ async function bootOpenClawSandbox(
   }
 }
 
-async function discardStoredSnapshot(
-  snapshot: StoredSnapshotRecord | null,
-  settings: DashboardSettings,
-  message: string,
-) {
-  if (!snapshot) {
-    return [] satisfies CommandRecord[];
-  }
-
-  await Promise.allSettled([
-    clearStoredSnapshot(),
-    deleteRemoteSnapshot(snapshot.snapshotId),
-    deleteStoredBackupAsset(snapshot.backupBundleStorageId),
-    deleteStoredBackupAsset(snapshot.backupSessionsStorageId),
-  ]);
-
-  return [
-    createSystemCommand(
-      snapshot.sourceSandboxId || snapshot.snapshotId,
-      'system:discard-snapshot',
-      redactSecrets(message, settings) ?? 'Stored snapshot was discarded.',
-    ),
-  ] satisfies CommandRecord[];
-}
-
 export async function isOpenClawSandboxRunning(sandboxId: string) {
   try {
     const sandbox = await Sandbox.get({ sandboxId });
@@ -596,16 +533,8 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
   }
 
   const snapshotRecord = await loadStoredSnapshot();
-  const storedRemoteSnapshot = getRestorableRemoteSnapshot(snapshotRecord);
-  const storedBackupSnapshot = hasStoredBackup(snapshotRecord) ? snapshotRecord : null;
-
-  if (snapshotRecord && !storedRemoteSnapshot && !storedBackupSnapshot) {
-    await discardStoredSnapshot(
-      snapshotRecord,
-      settings,
-      `Stored snapshot ${snapshotRecord.snapshotId} has no usable Vercel snapshot or Convex backup and was discarded.`,
-    ).catch(() => {});
-  }
+  const storedBackupSnapshot =
+    snapshotRecord && hasStoredBackup(snapshotRecord) ? snapshotRecord : null;
 
   if (storedBackupSnapshot) {
     try {
@@ -620,144 +549,40 @@ export async function createOpenClawSandbox(settings: DashboardSettings): Promis
       }
 
       await stopOpenClawSandbox(restoredBoot.sandbox.sandboxId).catch(() => {});
-      const backupFailureCommands = [
-        ...restoredBoot.commands,
-        createSystemCommand(
-          storedBackupSnapshot.sourceSandboxId || storedBackupSnapshot.snapshotId,
-          'system:convex-backup-restore-failed',
-          `Convex backup for snapshot ${storedBackupSnapshot.snapshotId} restored an unhealthy sandbox. Trying the Vercel snapshot next.`,
-        ),
-      ];
-
-      if (storedRemoteSnapshot) {
-        try {
-          const snapshotBoot = await bootOpenClawSandbox(
-            settings,
-            storedRemoteSnapshot,
-            'snapshot',
-            backupFailureCommands,
-          );
-
-          if (snapshotBoot.sandboxRecord.status === 'running') {
-            return {
-              sandboxRecord: snapshotBoot.sandboxRecord,
-              sessions: snapshotBoot.sessions,
-              commands: snapshotBoot.commands,
-            };
-          }
-
-          await stopOpenClawSandbox(snapshotBoot.sandbox.sandboxId).catch(() => {});
-        } catch {}
-      }
-
-      const discardCommands = await discardStoredSnapshot(
-        storedBackupSnapshot,
-        settings,
-        `Stored Convex backup ${storedBackupSnapshot.snapshotId} could not recover the sandbox. Falling back to a clean sandbox.`,
-      );
-      const cleanBoot = await bootOpenClawSandbox(settings, null, 'clean', [
-        ...backupFailureCommands,
-        ...discardCommands,
-      ]);
-
       return {
-        sandboxRecord: cleanBoot.sandboxRecord,
-        sessions: cleanBoot.sessions,
-        commands: cleanBoot.commands,
+        sandboxRecord: {
+          ...restoredBoot.sandboxRecord,
+          status: 'error',
+          errorMessage:
+            restoredBoot.sandboxRecord.errorMessage ??
+            `Convex backup ${storedBackupSnapshot.snapshotId} was preserved, but restore did not produce a healthy sandbox.`,
+          updatedAt: Date.now(),
+        },
+        sessions: restoredBoot.sessions,
+        commands: [
+          ...restoredBoot.commands,
+          createSystemCommand(
+            storedBackupSnapshot.sourceSandboxId || storedBackupSnapshot.snapshotId,
+            'system:convex-backup-restore-failed',
+            `Convex backup ${storedBackupSnapshot.snapshotId} was preserved in Convex, but restore produced an unhealthy sandbox. Clean boot was intentionally skipped.`,
+          ),
+        ],
       };
     } catch (error) {
-      const backupFailureCommands = [
-        createSystemCommand(
-          storedBackupSnapshot.sourceSandboxId || storedBackupSnapshot.snapshotId,
-          'system:convex-backup-restore-error',
-          redactSecrets(
-            `Convex backup restore failed for snapshot ${storedBackupSnapshot.snapshotId}. ${error instanceof Error ? error.message : 'Unknown restore error.'}`,
-            settings,
-          ) ?? `Convex backup restore failed for snapshot ${storedBackupSnapshot.snapshotId}.`,
-        ),
-      ];
-
-      if (storedRemoteSnapshot) {
-        try {
-          const snapshotBoot = await bootOpenClawSandbox(
-            settings,
-            storedRemoteSnapshot,
-            'snapshot',
-            backupFailureCommands,
-          );
-
-          if (snapshotBoot.sandboxRecord.status === 'running') {
-            return {
-              sandboxRecord: snapshotBoot.sandboxRecord,
-              sessions: snapshotBoot.sessions,
-              commands: snapshotBoot.commands,
-            };
-          }
-
-          await stopOpenClawSandbox(snapshotBoot.sandbox.sandboxId).catch(() => {});
-        } catch {}
-      }
-
-      const discardCommands = await discardStoredSnapshot(
-        storedBackupSnapshot,
-        settings,
-        `Stored Convex backup ${storedBackupSnapshot.snapshotId} and its Vercel snapshot fallback both failed. Falling back to a clean sandbox.`,
+      throw new Error(
+        redactSecrets(
+          `Convex backup restore failed for snapshot ${storedBackupSnapshot.snapshotId}. The stored snapshot was preserved and clean boot was intentionally skipped. ${error instanceof Error ? error.message : 'Unknown restore error.'}`,
+          settings,
+        ) ??
+          `Convex backup restore failed for snapshot ${storedBackupSnapshot.snapshotId}. The stored snapshot was preserved and clean boot was intentionally skipped.`,
       );
-      const cleanBoot = await bootOpenClawSandbox(settings, null, 'clean', [
-        ...backupFailureCommands,
-        ...discardCommands,
-      ]);
-
-      return {
-        sandboxRecord: cleanBoot.sandboxRecord,
-        sessions: cleanBoot.sessions,
-        commands: cleanBoot.commands,
-      };
     }
   }
 
-  if (storedRemoteSnapshot) {
-    try {
-      const restoredBoot = await bootOpenClawSandbox(settings, storedRemoteSnapshot, 'snapshot');
-
-      if (restoredBoot.sandboxRecord.status === 'running') {
-        return {
-          sandboxRecord: restoredBoot.sandboxRecord,
-          sessions: restoredBoot.sessions,
-          commands: restoredBoot.commands,
-        };
-      }
-
-      await stopOpenClawSandbox(restoredBoot.sandbox.sandboxId).catch(() => {});
-      const discardCommands = await discardStoredSnapshot(
-        storedRemoteSnapshot,
-        settings,
-        `Stored snapshot ${storedRemoteSnapshot.snapshotId} restored an unhealthy sandbox. Falling back to a clean sandbox.`,
-      );
-      const cleanBoot = await bootOpenClawSandbox(settings, null, 'clean', [
-        ...restoredBoot.commands,
-        ...discardCommands,
-      ]);
-
-      return {
-        sandboxRecord: cleanBoot.sandboxRecord,
-        sessions: cleanBoot.sessions,
-        commands: cleanBoot.commands,
-      };
-    } catch (error) {
-      const discardCommands = await discardStoredSnapshot(
-        storedRemoteSnapshot,
-        settings,
-        `Stored snapshot ${storedRemoteSnapshot.snapshotId} could not be restored. Falling back to a clean sandbox. ${error instanceof Error ? error.message : 'Unknown restore error.'}`,
-      );
-      const cleanBoot = await bootOpenClawSandbox(settings, null, 'clean', discardCommands);
-
-      return {
-        sandboxRecord: cleanBoot.sandboxRecord,
-        sessions: cleanBoot.sessions,
-        commands: cleanBoot.commands,
-      };
-    }
+  if (snapshotRecord) {
+    throw new Error(
+      `Stored snapshot ${snapshotRecord.snapshotId} is present in Convex but has no backup bundle. Restore only runs from Convex backup, so clean boot was intentionally skipped.`,
+    );
   }
 
   const cleanBoot = await bootOpenClawSandbox(settings, null, 'clean');
@@ -1110,7 +935,6 @@ export async function reconcileOpenClawSandboxLifecycle() {
           }
 
           const previousSandboxId = state.sandbox?.sandboxId ?? null;
-          const previousSnapshot = await loadStoredSnapshot();
           const hasLiveSandbox = previousSandboxId
             ? await isOpenClawSandboxRunning(previousSandboxId)
             : false;
@@ -1175,13 +999,6 @@ export async function reconcileOpenClawSandboxLifecycle() {
               await stopOpenClawSandbox(state.sandbox.sandboxId).catch(() => {});
             }
 
-            if (
-              previousSnapshot &&
-              previousSnapshot.snapshotId !== sandboxRecord.sourceSnapshotId
-            ) {
-              await deleteRemoteSnapshot(previousSnapshot.snapshotId);
-            }
-
             return {
               status: 'recreated',
               reason: 'rollover-complete',
@@ -1206,14 +1023,10 @@ export async function reconcileOpenClawSandboxLifecycle() {
             await stopOpenClawSandbox(previousSandboxId).catch(() => {});
           }
 
-          if (previousSnapshot && previousSnapshot.snapshotId !== sandboxRecord.sourceSnapshotId) {
-            await deleteRemoteSnapshot(previousSnapshot.snapshotId);
-          }
-
           return {
             status: 'recreated',
             reason: sandboxRecord.sourceSnapshotId
-              ? 'recovery-from-snapshot'
+              ? 'recovery-from-backup'
               : 'recovery-clean-start',
             sandboxId: sandboxRecord.sandboxId,
             previousSandboxId,
