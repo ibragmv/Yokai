@@ -14,7 +14,7 @@ The button clones this repository into a new Vercel project with the `apps/web` 
 - Convex-backed persistence for state, snapshots, sessions, and command history
 - Request-driven sandbox rollover and recovery
 - Production-safe secret masking and encryption at rest
-- Bun-first monorepo with a clean self-hosted setup path
+- Bun-first workspace with a clean self-hosted setup path
 
 ## Feature Highlights
 
@@ -115,7 +115,7 @@ cp apps/web/.env.example apps/web/.env
 4. Sync Convex for your development target.
 
 ```bash
-bun run convex:sync:dev
+bun run sync
 ```
 
 5. Start the app.
@@ -188,12 +188,6 @@ Optional runtime variables:
 
 Use the button above or import the repository manually in Vercel. Add the production environment variables from the previous step before the first deploy.
 
-For the cleanest Turborepo detection in Vercel:
-
-- keep `turbo.json` committed at the repository root
-- install dependencies from the repository root with Bun
-- let the project build through the root `bun run build` script
-
 ### 6. Add a scheduler if you want unattended recovery
 
 Call:
@@ -258,7 +252,7 @@ From the repo root:
 
 ```bash
 bun install
-bun run convex:sync:dev
+bun run sync
 bun run dev
 ```
 
@@ -266,22 +260,37 @@ Useful commands:
 
 ```bash
 bun run build
-bun run typecheck
 bun run lint
+bun run types
 bun run check
 bun run format
+bun run start
 ```
 
 Convex workflows:
 
 ```bash
-bun run convex:dev
-bun run convex:sync:dev
-bun run convex:deploy:dev
-bun run convex:deploy:prod
-bun run convex:logs:dev
-bun run convex:logs:prod
+bun run convex
+bun run sync
+bun run deploy
+bun run logs
 ```
+
+## Command Reference
+
+| Command | What it does |
+| --- | --- |
+| `bun run dev` | Start the Next.js app in development |
+| `bun run start` | Start the production server after a build |
+| `bun run build` | Build the web app for production |
+| `bun run lint` | Run Biome checks for the web app |
+| `bun run types` | Generate Next.js route types and run TypeScript checks |
+| `bun run check` | Run `lint` and `types` together |
+| `bun run format` | Format the repository with Biome |
+| `bun run convex` | Start Convex dev watch mode |
+| `bun run sync` | Sync Convex for the dev target once |
+| `bun run deploy` | Deploy Convex to the prod target |
+| `bun run logs` | Read Convex logs for the prod target |
 
 ## Production Notes
 
@@ -341,6 +350,10 @@ No. Sensitive settings are encrypted before they are written to Convex, and comm
 ### Can I use Yokai without an AI Gateway key?
 
 Yes. The dashboard still works, but Gateway model discovery and credit reporting fall back to reduced behavior.
+
+### Which environment file should I commit?
+
+Commit `apps/web/.env.example` only. Keep real credentials in `apps/web/.env`, which is gitignored.
 
 ## Self-Hosted Checklist
 
