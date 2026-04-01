@@ -1,15 +1,38 @@
 # Yokai
 
-Yokai is a private control room for running OpenClaw inside Vercel Sandbox. The UI is built with Next.js App Router, while Convex stores admin credentials, dashboard state, session data, command history, usage snapshots, and snapshot metadata.
+Yokai is a private control room for running OpenClaw inside Vercel Sandbox. It gives you a locked-down admin dashboard for booting, rotating, restoring, and observing a single OpenClaw runtime, while Convex persists credentials, state, snapshots, command history, and usage data.
 
-## What It Does
+## Deploy Your Own
 
-- boot, stop, and sync an OpenClaw sandbox
-- configure Telegram access, gateway credentials, default model, and timeout
-- auto-roll a sandbox before its TTL expires and restore it from the latest persisted snapshot when a dashboard or scheduler request triggers lifecycle reconciliation
-- bootstrap the first admin account from `/login`, then protect the dashboard with cookie-based sessions
-- show recent OpenClaw sessions, tracked sandbox commands, and usage snapshots
-- mask secrets in the UI and encrypt sensitive values before persisting them in Convex
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+
+Use the button to create a new Vercel project from your own copy of this repository. Yokai also needs a Convex deployment, so treat Vercel as the web host and Convex as the persistent state layer.
+
+## At a Glance
+
+- Private admin dashboard for a single OpenClaw runtime
+- Convex-backed persistence for state, snapshots, sessions, and command history
+- Request-driven sandbox rollover and recovery
+- Production-safe secret masking and encryption at rest
+- Bun-first monorepo with a clean self-hosted setup path
+
+## Feature Highlights
+
+| Feature | What you get |
+| --- | --- |
+| Sandbox control | Start, stop, and sync one OpenClaw sandbox from the dashboard |
+| Recovery flow | Snapshot, handoff bundle persistence, and restore on the next reconcile |
+| Secure admin access | First-run bootstrap, hashed passwords, protected routes, session cookies |
+| Observability | Recent sessions, command output, usage snapshots, runtime status |
+| Self-hosted setup | Local Bun workflow, Convex integration, Vercel-ready deployment path |
+
+## Why Yokai
+
+- Start, stop, and sync a single OpenClaw sandbox from one dashboard.
+- Store the latest runtime state, snapshot metadata, command output, and session inventory in Convex.
+- Auto-roll a sandbox before TTL expiry and restore from the latest Convex-backed handoff bundle.
+- Lock down the UI with a bootstrap-once admin login and cookie-backed protected routes.
+- Keep secrets masked in the UI and encrypted at rest before writing them to Convex.
 
 ## Stack
 
@@ -20,6 +43,36 @@ Yokai is a private control room for running OpenClaw inside Vercel Sandbox. The 
 - Vercel Sandbox
 - Biome
 
+## Architecture
+
+```text
+Browser
+  -> Next.js dashboard
+  -> Server Actions / API routes
+  -> Convex state + storage
+  -> Vercel Sandbox runtime
+  -> OpenClaw gateway
+```
+
+Yokai manages one active sandbox at a time. The dashboard is the control plane. Convex is the persistence layer. OpenClaw runs inside the sandbox, not in the Next.js process.
+
+## Screenshots
+
+Add your own product screenshots here once your deployment is live.
+
+```text
+README assets suggestion:
+- docs/screenshots/dashboard-overview.png
+- docs/screenshots/dashboard-activity.png
+- docs/screenshots/dashboard-settings.png
+```
+
+Suggested captions:
+
+- Overview: runtime state, gateway URL, latest snapshot, and recovery window
+- Activity: tracked sessions and redacted command output
+- Settings: sandbox behavior, allowlists, and gateway credentials
+
 ## Project Layout
 
 ```text
@@ -29,20 +82,128 @@ Yokai is a private control room for running OpenClaw inside Vercel Sandbox. The 
 │   ├── src/components     # Dashboard UI
 │   ├── src/lib            # Auth, store, sandbox, gateway, security logic
 │   ├── convex             # Convex schema, validators, queries, mutations
-│   └── .env.example       # Local environment template
+│   └── .env.example       # Publish-safe environment template
 ├── package.json           # Workspace-level scripts
 └── README.md
 ```
 
-## Environment
+## Requirements
 
-Create a local env file:
+- Bun 1.3+
+- A Convex project
+- A Vercel project for hosting the Next.js app
+- Access to Vercel Sandbox in the target account
+- Optional: an AI Gateway key if you want Gateway model discovery and credit reporting
+- Optional: a scheduler for unattended sandbox rollover
+
+## Quick Start
+
+1. Install dependencies from the repo root.
+
+```bash
+bun install
+```
+
+2. Create your local environment file.
 
 ```bash
 cp apps/web/.env.example apps/web/.env
 ```
 
-Minimum required variables:
+3. Fill in the required values in `apps/web/.env`.
+
+4. Sync Convex for your development target.
+
+```bash
+bun run convex:sync:dev
+```
+
+5. Start the app.
+
+```bash
+bun run dev
+```
+
+6. Open `http://localhost:3000/login` and bootstrap the first admin account.
+
+If no credentials exist yet, Yokai switches the login screen into setup mode and creates the first admin user. After that, the dashboard and `/api/overview` require a valid authenticated session.
+
+## Demo Flow
+
+1. Deploy the app and connect it to a Convex project.
+2. Open `/login` and create the first admin account.
+3. Save runtime settings such as Telegram token, timeout, and default model.
+4. Start the sandbox and wait for the OpenClaw gateway to become ready.
+5. Use `Sync Sessions` to pull the latest OpenClaw session inventory.
+6. Enable auto-recreate and attach a scheduler if you want unattended rollover.
+
+## Deploy Your Own Setup
+
+### 1. Fork or copy the repository
+
+Create your own Git repository first. Do not deploy directly from someone else's working tree.
+
+### 2. Create a Convex deployment
+
+Create a Convex project and collect these values:
+
+- `CONVEX_DEPLOYMENT`
+- `NEXT_PUBLIC_CONVEX_URL`
+- `NEXT_PUBLIC_CONVEX_SITE_URL`
+
+If you want separate explicit targets for local helper commands, also define:
+
+- `CONVEX_DEPLOYMENT_DEV`
+- `NEXT_PUBLIC_CONVEX_URL_DEV`
+- `NEXT_PUBLIC_CONVEX_SITE_URL_DEV`
+- `CONVEX_DEPLOYMENT_PROD`
+- `NEXT_PUBLIC_CONVEX_URL_PROD`
+- `NEXT_PUBLIC_CONVEX_SITE_URL_PROD`
+
+### 3. Create a stable encryption secret
+
+Set `YOKAI_ENCRYPTION_KEY` to a long random string and keep it stable across redeploys for the same environment. If you rotate it without migrating stored data, Yokai will not be able to decrypt existing encrypted settings.
+
+### 4. Configure the web app environment
+
+For production, set:
+
+- `NEXT_PUBLIC_APP_URL`
+- `CONVEX_DEPLOYMENT`
+- `NEXT_PUBLIC_CONVEX_URL`
+- `NEXT_PUBLIC_CONVEX_SITE_URL`
+- `YOKAI_ENCRYPTION_KEY`
+
+Recommended production variables:
+
+- `CRON_SECRET`
+- `YOKAI_ALLOWED_ORIGINS`
+
+Optional runtime variables:
+
+- `AI_GATEWAY_API_KEY`
+- `VERCEL_OIDC_TOKEN`
+
+### 5. Import the repository into Vercel
+
+Use the button above or import the repository manually in Vercel. Add the production environment variables from the previous step before the first deploy.
+
+### 6. Add a scheduler if you want unattended recovery
+
+Call:
+
+```text
+GET /api/internal/sandbox-rollover
+Authorization: Bearer <CRON_SECRET>
+```
+
+Without a scheduler, auto-recreate only runs when a dashboard request or overview refresh reaches the app.
+
+## Environment Reference
+
+Copy `apps/web/.env.example` to `apps/web/.env` for local work.
+
+### Required
 
 ```dotenv
 NEXT_PUBLIC_APP_URL=http://localhost:3000
@@ -52,16 +213,21 @@ NEXT_PUBLIC_CONVEX_SITE_URL=
 YOKAI_ENCRYPTION_KEY=
 ```
 
-Additional variables used by the app:
+### Recommended
 
 ```dotenv
 YOKAI_ALLOWED_ORIGINS=
 CRON_SECRET=
+```
+
+### Optional
+
+```dotenv
 AI_GATEWAY_API_KEY=
 VERCEL_OIDC_TOKEN=
 ```
 
-Optional Convex target variables used by the deploy and log scripts:
+### Optional helper targets
 
 ```dotenv
 CONVEX_DEPLOYMENT_DEV=
@@ -72,53 +238,27 @@ NEXT_PUBLIC_CONVEX_URL_PROD=
 NEXT_PUBLIC_CONVEX_SITE_URL_PROD=
 ```
 
-Notes:
+### Variable notes
 
-- `YOKAI_ENCRYPTION_KEY` is mandatory. Without it, Yokai cannot decrypt encrypted dashboard secrets from Convex.
-- `YOKAI_ALLOWED_ORIGINS` controls the allowed origins for Next.js Server Actions.
-- `CRON_SECRET` protects the internal rollover endpoint for external schedulers such as `cron-job.org`. In local development, the rollover route is allowed without it when `NODE_ENV` is not `production`.
-- `autoRecreateSandbox` is not a background daemon by itself. Without an open dashboard or an external scheduler hitting the rollover endpoint, an expired sandbox stays down until the next request triggers reconciliation.
-- `AI_GATEWAY_API_KEY` can be prefilled from env or later managed from the dashboard.
-- `VERCEL_OIDC_TOKEN` is only available from env and is forwarded into the sandbox when present.
-- the `CONVEX_*_DEV` and `CONVEX_*_PROD` variables are only needed for the explicit `convex:deploy:*` and `convex:logs:*` helper scripts.
+- `YOKAI_ENCRYPTION_KEY` is mandatory for encrypted settings stored in Convex.
+- `YOKAI_ALLOWED_ORIGINS` controls allowed origins for Next.js Server Actions.
+- `CRON_SECRET` protects the rollover endpoint in production.
+- `AI_GATEWAY_API_KEY` enables Gateway model discovery and credit snapshots and can also be supplied later from the dashboard.
+- `VERCEL_OIDC_TOKEN` is env-only and is forwarded into the sandbox when present.
 
 ## Local Development
-
-Install dependencies from the repo root:
-
-```bash
-bun install
-```
-
-Sync the Convex schema and functions to your development deployment:
-
-```bash
-bun run convex:sync:dev
-```
-
-Deploy Convex explicitly to dev or prod using the targets stored in `apps/web/.env`:
-
-```bash
-bun run convex:deploy:dev
-bun run convex:deploy:prod
-```
-
-Start the web app:
-
-```bash
-bun run dev
-```
-
-Open `http://localhost:3000/login`.
-
-If the project has no admin credentials yet, Yokai switches the login screen into bootstrap mode and lets you create the first admin user. After that, the dashboard and `/api/overview` require an authenticated admin session.
-
-## Scripts
 
 From the repo root:
 
 ```bash
+bun install
+bun run convex:sync:dev
 bun run dev
+```
+
+Useful commands:
+
+```bash
 bun run build
 bun run typecheck
 bun run lint
@@ -137,39 +277,72 @@ bun run convex:logs:dev
 bun run convex:logs:prod
 ```
 
-External scheduler:
+## Production Notes
 
-```text
-GET /api/internal/sandbox-rollover
-Authorization: Bearer <CRON_SECRET>
-```
-
-Use an external scheduler if you want sandbox rollover and recovery to continue while nobody is visiting the dashboard. Without it, lifecycle reconciliation only runs on normal app requests.
+- Yokai is production-ready as a single-tenant admin surface, not a multi-tenant control plane.
+- Protected pages and API routes require the admin session cookie.
+- Secrets are encrypted before persistence and redacted from stored command output.
+- `autoRecreateSandbox` is request-driven. It is not a background daemon.
+- Recovery restores from the Convex-backed handoff bundle, not from the remote Vercel snapshot itself.
+- If the latest backup bundle is missing or damaged, Yokai falls back to a clean boot.
 
 ## Dashboard Behavior
 
-- the dashboard auto-refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint
-- `Start sandbox` creates a new Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`
-- when auto-recreate is enabled, Yokai attempts lifecycle reconciliation during dashboard page loads, `/api/overview` refreshes, and `/api/internal/sandbox-rollover` calls
-- during that reconciliation, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` plus a Convex-backed handoff bundle, and restores the replacement sandbox only from the Convex backup
-- if the Convex backup is missing or corrupted, Yokai discards that broken snapshot record and falls back to a clean sandbox boot
-- if a sandbox has already stopped or expired, auto-recreate can also recover it on the next reconciliation request
-- if you manually stop the sandbox while auto-recreate remains enabled, the next reconciliation request can start it again
-- if nobody opens the dashboard and no external scheduler pings `/api/internal/sandbox-rollover`, an expired sandbox remains stopped until the next request
-- `/api/internal/sandbox-rollover` is intended to be called by an external scheduler like `cron-job.org`; it requires `Authorization: Bearer <CRON_SECRET>` in production
-- `Sync` fetches OpenClaw session data and appends runtime usage snapshots
-- recent command stdout/stderr is stored in Convex after secret redaction
+- The dashboard refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint.
+- `Start sandbox` creates a Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`.
+- `Sync Sessions` fetches OpenClaw session data and appends runtime usage snapshots.
+- When auto-recreate is enabled, Yokai attempts lifecycle reconciliation during page loads, overview refreshes, and rollover endpoint calls.
+- If a running sandbox reaches its rollover window, Yokai snapshots it, stores the latest handoff bundle in Convex, starts a replacement sandbox, and then stops the previous one.
+- If a sandbox is already gone, Yokai can recreate it from the latest valid backup on the next reconciliation request.
 
 ## Persistence Model
 
-Convex stores three main data areas:
+Convex stores:
 
-- `states`: the persisted dashboard payload, including sandbox status, settings, sessions, commands, and usage snapshots
-- `snapshots`: the latest persisted sandbox snapshot metadata plus the Convex storage reference for the handoff bundle used during restore
+- `states`: dashboard settings, sandbox state, sessions, commands, usage, and operation lease
+- `snapshots`: latest snapshot metadata plus the storage reference for the handoff bundle
 - `credentials`: admin login and password hash metadata
 - `sessions`: active admin sessions used for cookie validation
 
 Sensitive settings such as bot tokens and gateway keys are encrypted before they are written to Convex.
 
-Snapshot recovery uses the Convex handoff bundle as the only restore source.
-The matching remote Vercel snapshot is not used for restore, and if the Convex handoff bundle is missing or damaged, Yokai falls back to a clean boot.
+## Security Notes
+
+- The first login flow bootstraps exactly one admin credential set.
+- Passwords are salted and hashed before storage.
+- Session cookies are `httpOnly` and `sameSite=lax`.
+- API responses are sent with `Cache-Control: private, no-store, max-age=0`.
+- Security headers are configured in `next.config.ts`.
+
+## FAQ
+
+### Does Yokai manage multiple sandboxes?
+
+No. The current design is intentionally single-runtime and manages one active OpenClaw sandbox at a time.
+
+### Does auto-recreate run in the background by itself?
+
+No. Reconciliation is request-driven. For unattended rollover, add a scheduler that calls `/api/internal/sandbox-rollover`.
+
+### Is the Vercel button enough on its own?
+
+No. You still need to configure Convex and the required environment variables before the deployment is actually usable.
+
+### Are secrets stored in plain text?
+
+No. Sensitive settings are encrypted before they are written to Convex, and command output is redacted before it is stored in the activity feed.
+
+### Can I use Yokai without an AI Gateway key?
+
+Yes. The dashboard still works, but Gateway model discovery and credit reporting fall back to reduced behavior.
+
+## Self-Hosted Checklist
+
+- Forked or copied into your own repository
+- Convex deployment created
+- Required environment variables set
+- Stable `YOKAI_ENCRYPTION_KEY` saved
+- Production URL set in `NEXT_PUBLIC_APP_URL`
+- `CRON_SECRET` set for production
+- Scheduler configured if unattended rollover is required
+- First admin account bootstrapped through `/login`
