@@ -167,6 +167,8 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
           state.sandbox.sandboxId,
           state.settings,
         );
+        const stoppedMetrics = await stopOpenClawSandbox(state.sandbox.sandboxId);
+
         await updateDashboardState((current) => ({
           ...current,
           sessions: synced?.sessions ?? current.sessions,
@@ -174,21 +176,32 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
             (commands, command) => appendCommand(commands, command),
             current.commands,
           ),
-          usage: synced
-            ? appendUsage(current.usage, {
-                source: 'sandbox',
-                creditsRemaining: null,
-                creditsUsed: null,
-                cpuMs: synced.sandbox.activeCpuUsageMs,
-                networkBytes: synced.sandbox.networkBytes,
-                recordedAt: Date.now(),
-              })
-            : current.usage,
+          usage:
+            synced || stoppedMetrics
+              ? appendUsage(current.usage, {
+                  source: 'sandbox',
+                  creditsRemaining: null,
+                  creditsUsed: null,
+                  cpuMs:
+                    stoppedMetrics?.activeCpuUsageMs ?? synced?.sandbox.activeCpuUsageMs ?? null,
+                  networkBytes:
+                    stoppedMetrics?.networkBytes ?? synced?.sandbox.networkBytes ?? null,
+                  recordedAt: Date.now(),
+                })
+              : current.usage,
           sandbox: current.sandbox
             ? {
                 ...(synced?.sandbox ?? current.sandbox),
                 status: 'stopped',
                 gatewayUrl: null,
+                activeCpuUsageMs:
+                  stoppedMetrics?.activeCpuUsageMs ??
+                  synced?.sandbox.activeCpuUsageMs ??
+                  current.sandbox.activeCpuUsageMs,
+                networkBytes:
+                  stoppedMetrics?.networkBytes ??
+                  synced?.sandbox.networkBytes ??
+                  current.sandbox.networkBytes,
                 errorMessage: null,
                 expiresAt: null,
                 lastSnapshotAt: snapshotCommand.finishedAt ?? current.sandbox.lastSnapshotAt,

@@ -46,6 +46,7 @@ const GATEWAY_READY_TIMEOUT_MS = 20_000;
 const GATEWAY_READY_POLL_MS = 1_000;
 const SNAPSHOT_EXPIRATION_MS = 0;
 const SESSION_SYNC_TIMEOUT_SECONDS = 20;
+const TELEGRAM_SESSION_KEY_PATTERN = /^agent:([^:]+):telegram:(direct|slash):(.+)$/;
 const OPERATION_LEASE_TTLS_MS: Record<SandboxOperationType, number> = {
   start: 10 * 60_000,
   stop: 4 * 60_000,
@@ -116,11 +117,99 @@ function createSystemCommand(
 }
 
 function getNetworkBytes(sandbox: Sandbox) {
-  if (!sandbox.networkTransfer) {
+  const metrics = sandbox as Sandbox & {
+    networkUsage?: {
+      ingress?: number;
+      egress?: number;
+    } | null;
+    networkTransfer?: {
+      ingress?: number;
+      egress?: number;
+    } | null;
+  };
+  const networkUsage = metrics.networkUsage ?? metrics.networkTransfer;
+
+  if (
+    !networkUsage ||
+    typeof networkUsage.ingress !== 'number' ||
+    typeof networkUsage.egress !== 'number'
+  ) {
     return null;
   }
 
-  return sandbox.networkTransfer.ingress + sandbox.networkTransfer.egress;
+  return networkUsage.ingress + networkUsage.egress;
+}
+
+async function readOpenClawVersion(sandbox: Sandbox) {
+  try {
+    const versionResult = await sandbox.runCommand({
+      cmd: 'bash',
+      args: [
+        '-lc',
+        [
+          `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
+          `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
+          'openclaw --version',
+        ].join(' && '),
+      ],
+      cwd: OPENCLAW_ROOT,
+    });
+
+    if (versionResult.exitCode !== 0) {
+      return null;
+    }
+
+    return stripAnsi((await versionResult.stdout()).trim()) || null;
+  } catch {
+    return null;
+  }
+}
+
+function getCanonicalSessionKey(sessionKey: string, agentId: string) {
+  const telegramMatch = sessionKey.match(TELEGRAM_SESSION_KEY_PATTERN);
+  if (telegramMatch) {
+    return `agent:${telegramMatch[1] || agentId}:telegram:${telegramMatch[3]}`;
+  }
+
+  return sessionKey || `agent:${agentId}`;
+}
+
+function mergeNumericMetric(left: number | null, right: number | null) {
+  if (typeof left === 'number' && typeof right === 'number') {
+    return Math.max(left, right);
+  }
+
+  return typeof right === 'number' ? right : left;
+}
+
+function normalizeSessions(sessions: SessionRecord[]) {
+  const deduped = new Map<string, SessionRecord>();
+
+  for (const session of sessions) {
+    const canonicalKey = getCanonicalSessionKey(session.sessionKey, session.agentId);
+    const normalizedSession = {
+      ...session,
+      sessionKey: canonicalKey,
+    } satisfies SessionRecord;
+    const existing = deduped.get(canonicalKey);
+
+    if (!existing) {
+      deduped.set(canonicalKey, normalizedSession);
+      continue;
+    }
+
+    const latest = normalizedSession.updatedAt >= existing.updatedAt ? normalizedSession : existing;
+    deduped.set(canonicalKey, {
+      sessionKey: canonicalKey,
+      agentId: latest.agentId,
+      model: latest.model ?? existing.model ?? normalizedSession.model,
+      updatedAt: Math.max(existing.updatedAt, normalizedSession.updatedAt),
+      totalTokens: mergeNumericMetric(existing.totalTokens, normalizedSession.totalTokens),
+      contextTokens: mergeNumericMetric(existing.contextTokens, normalizedSession.contextTokens),
+    });
+  }
+
+  return [...deduped.values()];
 }
 
 async function withSandboxOperationLease<T>(
@@ -426,13 +515,12 @@ async function bootOpenClawSandbox(
       };
     }
 
-    const version = await sandbox.runCommand('bash', ['-lc', 'openclaw --version']);
     const startedAt = Date.now();
     const sandboxRecord = {
       ...createSandboxRecord(sandbox, {
         status: 'running',
         sourceSnapshotId: sandbox.sourceSnapshotId ?? restoredSnapshot?.snapshotId ?? null,
-        openClawVersion: (await version.stdout()).trim() || null,
+        openClawVersion: await readOpenClawVersion(sandbox),
         errorMessage: null,
         lastSnapshotAt: restoredSnapshot?.updatedAt ?? null,
         startedAt,
@@ -736,6 +824,7 @@ export async function syncOpenClawSessions(
         }))
       : [];
     const storedSnapshot = await loadStoredSnapshot();
+    const openClawVersion = await readOpenClawVersion(sandbox);
 
     return {
       sandbox: {
@@ -746,14 +835,14 @@ export async function syncOpenClawSessions(
         sourceSnapshotId: sandbox.sourceSnapshotId ?? null,
         activeCpuUsageMs: sandbox.activeCpuUsageMs ?? null,
         networkBytes: getNetworkBytes(sandbox),
-        openClawVersion: null,
+        openClawVersion,
         errorMessage: null,
         startedAt: sandbox.createdAt.getTime(),
         expiresAt: sandbox.createdAt.getTime() + sandbox.timeout,
         lastSnapshotAt: storedSnapshot?.updatedAt ?? null,
         updatedAt: Date.now(),
       },
-      sessions,
+      sessions: normalizeSessions(sessions),
       commands: [sessionsCommand],
     };
   } catch (error) {
@@ -890,13 +979,22 @@ export async function stopOpenClawSandbox(sandboxId: string) {
       sandbox.status === 'snapshotting' ||
       sandbox.status === 'failed'
     ) {
-      return;
+      return {
+        activeCpuUsageMs: sandbox.activeCpuUsageMs ?? null,
+        networkBytes: getNetworkBytes(sandbox),
+      };
     }
 
     await sandbox.stop({ blocking: true });
+    const stoppedSandbox = await Sandbox.get({ sandboxId }).catch(() => sandbox);
+
+    return {
+      activeCpuUsageMs: stoppedSandbox.activeCpuUsageMs ?? sandbox.activeCpuUsageMs ?? null,
+      networkBytes: getNetworkBytes(stoppedSandbox) ?? getNetworkBytes(sandbox),
+    };
   } catch (error) {
     if (isSandboxGoneError(error)) {
-      return;
+      return null;
     }
 
     throw error;

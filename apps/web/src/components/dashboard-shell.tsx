@@ -16,6 +16,7 @@ import type {
   CommandRecord,
   DashboardActionResult,
   DashboardPayload,
+  SandboxRecord,
   SessionRecord,
   SettingsFormValues,
   UsageSnapshot,
@@ -84,6 +85,23 @@ function formatTokenCount(value: number | null) {
 
 function formatCpu(value: number | null) {
   return typeof value === 'number' ? `${value.toLocaleString()} ms` : 'No sample';
+}
+
+function formatRuntimeSample(
+  liveValue: number | null | undefined,
+  lastValue: number | null | undefined,
+  sandboxStatus: SandboxRecord['status'] | undefined,
+  formatter: (value: number | null) => string,
+) {
+  if (typeof liveValue === 'number') {
+    return formatter(liveValue);
+  }
+
+  if (typeof lastValue === 'number') {
+    return `${formatter(lastValue)} (last sample)`;
+  }
+
+  return sandboxStatus === 'running' ? 'Available after stop' : formatter(null);
 }
 
 function formatUsageValue(snapshot: UsageSnapshot) {
@@ -722,6 +740,11 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
       detail: `${Math.max(savedTimeoutSeconds, 60).toLocaleString()} second TTL`,
     },
   ];
+  const latestSandboxUsage = data.usage.find(
+    (snapshot) =>
+      snapshot.source === 'sandbox' &&
+      (typeof snapshot.cpuMs === 'number' || typeof snapshot.networkBytes === 'number'),
+  );
 
   const runtimeFacts: RuntimeFact[] = [
     {
@@ -738,11 +761,21 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
     },
     {
       label: 'Network',
-      value: formatBytes(data.sandbox?.networkBytes ?? null),
+      value: formatRuntimeSample(
+        data.sandbox?.networkBytes,
+        latestSandboxUsage?.networkBytes,
+        data.sandbox?.status,
+        formatBytes,
+      ),
     },
     {
       label: 'CPU',
-      value: formatCpu(data.sandbox?.activeCpuUsageMs ?? null),
+      value: formatRuntimeSample(
+        data.sandbox?.activeCpuUsageMs,
+        latestSandboxUsage?.cpuMs,
+        data.sandbox?.status,
+        formatCpu,
+      ),
     },
     {
       label: 'Last Sync',
