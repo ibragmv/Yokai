@@ -122,14 +122,6 @@ function formatSnapshotLabel(snapshotId: string | null | undefined) {
   return `${snapshotId.slice(0, 8)}…${snapshotId.slice(-6)}`;
 }
 
-function formatGatewayLabel(url: string | null | undefined) {
-  if (!url) {
-    return 'Not available';
-  }
-
-  return url.replace(/^https?:\/\//, '');
-}
-
 function getSnapshotWindowMs(timeoutSeconds: number) {
   const timeoutMs = Math.max(timeoutSeconds, 60) * 1000;
   return Math.min(300_000, Math.max(90_000, Math.floor(timeoutMs * 0.3)));
@@ -141,11 +133,9 @@ function parseSectionHash(hash: string): Section | null {
 }
 
 function OverviewSection({
-  gatewayUrl,
   runtimeFacts,
   usage,
 }: {
-  gatewayUrl: string | null;
   runtimeFacts: RuntimeFact[];
   usage: UsageSnapshot[];
 }) {
@@ -172,12 +162,6 @@ function OverviewSection({
             </div>
           ))}
         </dl>
-
-        {gatewayUrl ? (
-          <a className="inline-link" href={gatewayUrl} rel="noreferrer" target="_blank">
-            Open Gateway
-          </a>
-        ) : null}
       </article>
 
       <article className="surface-card">
@@ -328,7 +312,7 @@ function SettingsSection({
       id="panel-settings"
       role="tabpanel"
     >
-      <article className="surface-card">
+      <article className="surface-card settings-card">
         <div className="card-heading">
           <div>
             <p className="eyebrow">Access & Runtime</p>
@@ -338,7 +322,7 @@ function SettingsSection({
 
         <div className="form-grid">
           <label className="field">
-            <span>Gateway Name</span>
+            <span>Control Room Name</span>
             <input
               autoComplete="off"
               name="displayName"
@@ -387,6 +371,7 @@ function SettingsSection({
           <label className="field">
             <span>Sandbox Timeout (Seconds)</span>
             <input
+              autoComplete="off"
               inputMode="numeric"
               min={60}
               name="timeoutSeconds"
@@ -433,10 +418,10 @@ function SettingsSection({
         </div>
       </article>
 
-      <article className="surface-card">
+      <article className="surface-card settings-card">
         <div className="card-heading">
           <div>
-            <p className="eyebrow">Gateway & Credentials</p>
+            <p className="eyebrow">Models & Credentials</p>
             <h2>Secrets and Routing</h2>
           </div>
         </div>
@@ -693,8 +678,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
 
   const runtimeFacts: RuntimeFact[] = [
     {
-      label: 'Gateway URL',
-      value: data.sandbox?.gatewayUrl ?? 'Not running',
+      label: 'Runtime',
+      value: data.sandbox?.runtime ?? 'Idle',
     },
     {
       label: 'OpenClaw Version',
@@ -725,6 +710,10 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
     {
       label: 'Last Sync',
       value: formatRelativeDate(data.sandbox?.updatedAt ?? null),
+    },
+    {
+      label: 'Started',
+      value: formatRelativeDate(data.sandbox?.startedAt ?? null),
     },
   ];
 
@@ -763,8 +752,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
                 </dd>
               </div>
               <div>
-                <dt>Gateway</dt>
-                <dd>{formatGatewayLabel(data.sandbox?.gatewayUrl)}</dd>
+                <dt>Runtime</dt>
+                <dd>{data.sandbox?.runtime ?? 'Ready on start'}</dd>
               </div>
               <div>
                 <dt>Lease</dt>
@@ -888,13 +877,14 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
           ))}
         </div>
 
-        <div className="section-stack" id="dashboard-content">
+        <div
+          className={
+            section === 'settings' ? 'section-stack section-stack-settings' : 'section-stack'
+          }
+          id="dashboard-content"
+        >
           {section === 'overview' ? (
-            <OverviewSection
-              gatewayUrl={data.sandbox?.gatewayUrl ?? null}
-              runtimeFacts={runtimeFacts}
-              usage={data.usage}
-            />
+            <OverviewSection runtimeFacts={runtimeFacts} usage={data.usage} />
           ) : null}
 
           {section === 'activity' ? (

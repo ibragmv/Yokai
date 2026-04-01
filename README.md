@@ -4,9 +4,9 @@ Yokai is a private control room for running OpenClaw inside Vercel Sandbox. It g
 
 ## Deploy Your Own
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/ibragmv/Yokai&project-name=yokai&repository-name=Yokai&root-directory=apps/web&install-command=bun%20install&build-command=bun%20run%20build)
 
-Use the button to create a new Vercel project from your own copy of this repository. Yokai also needs a Convex deployment, so treat Vercel as the web host and Convex as the persistent state layer.
+The button clones this repository into a new Vercel project with the `apps/web` app preselected. Yokai also needs a Convex deployment, so treat Vercel as the web host and Convex as the persistent state layer.
 
 ## At a Glance
 
@@ -69,7 +69,7 @@ README assets suggestion:
 
 Suggested captions:
 
-- Overview: runtime state, gateway URL, latest snapshot, and recovery window
+- Overview: runtime state, latest snapshot, and recovery window
 - Activity: tracked sessions and redacted command output
 - Settings: sandbox behavior, allowlists, and gateway credentials
 
@@ -187,6 +187,12 @@ Optional runtime variables:
 ### 5. Import the repository into Vercel
 
 Use the button above or import the repository manually in Vercel. Add the production environment variables from the previous step before the first deploy.
+
+For the cleanest Turborepo detection in Vercel:
+
+- keep `turbo.json` committed at the repository root
+- install dependencies from the repository root with Bun
+- let the project build through the root `bun run build` script
 
 ### 6. Add a scheduler if you want unattended recovery
 

@@ -1,10 +1,13 @@
 import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 
 import './globals.css';
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+
 export const metadata: Metadata = {
+  metadataBase: appUrl ? new URL(appUrl) : undefined,
   title: {
     default: 'Yokai Control Room',
     template: '%s | Yokai',
@@ -12,7 +15,7 @@ export const metadata: Metadata = {
   description: 'Run OpenClaw inside Vercel Sandbox and monitor sessions, usage, and runtime state.',
 };
 
-export const viewport = {
+export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   themeColor: '#0f172a',

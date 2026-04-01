@@ -3,16 +3,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "convex:dev": "bun run scripts/convex-command.ts dev watch",
-    "convex:sync:dev": "bun run scripts/convex-command.ts dev sync",
-    "convex:deploy:dev": "bun run scripts/convex-command.ts dev deploy",
-    "convex:deploy:prod": "bun run scripts/convex-command.ts prod deploy",
-    "convex:logs:dev": "bun run scripts/convex-command.ts dev logs",
-    "convex:logs:prod": "bun run scripts/convex-command.ts prod logs",
     "build": "next build",
     "start": "next start",
     "lint": "biome check src convex/*.ts next.config.ts",
-    "typecheck": "tsc --noEmit"
+    "types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

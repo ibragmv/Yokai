@@ -5,17 +5,16 @@
   "workspaces": ["apps/*"],
   "scripts": {
     "dev": "bun run --cwd apps/web dev",
-    "convex:dev": "bun run --cwd apps/web convex:dev",
-    "convex:sync:dev": "bun run --cwd apps/web convex:sync:dev",
-    "convex:deploy:dev": "bun run --cwd apps/web convex:deploy:dev",
-    "convex:deploy:prod": "bun run --cwd apps/web convex:deploy:prod",
-    "convex:logs:dev": "bun run --cwd apps/web convex:logs:dev",
-    "convex:logs:prod": "bun run --cwd apps/web convex:logs:prod",
+    "start": "bun run --cwd apps/web start",
     "build": "bun run --cwd apps/web build",
     "lint": "bun run --cwd apps/web lint",
-    "typecheck": "bun run --cwd apps/web typecheck",
+    "types": "bun run --cwd apps/web types",
     "format": "biome format --write .",
-    "check": "biome check ."
+    "check": "bun run lint && bun run types",
+    "convex": "bun run --cwd apps/web scripts/convex-command.ts dev watch",
+    "sync": "bun run --cwd apps/web scripts/convex-command.ts dev sync",
+    "deploy": "bun run --cwd apps/web scripts/convex-command.ts prod deploy",
+    "logs": "bun run --cwd apps/web scripts/convex-command.ts prod logs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4"
