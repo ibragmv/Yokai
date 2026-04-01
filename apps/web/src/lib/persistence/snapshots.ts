@@ -19,8 +19,6 @@ function mapSnapshot(snapshot: Snapshot): StoredSnapshotRecord {
     sessionCount: null,
     backupBundleStorageId: null,
     backupBundleSize: null,
-    backupSessionsStorageId: null,
-    backupSessionsSize: null,
     updatedAt: Date.now(),
   };
 }
@@ -41,8 +39,6 @@ function mapStoredSnapshot(record: {
   sessionCount?: number | null;
   backupBundleStorageId?: StorageAssetId | null;
   backupBundleSize?: number | null;
-  backupSessionsStorageId?: StorageAssetId | null;
-  backupSessionsSize?: number | null;
   updatedAt: number;
 }): StoredSnapshotRecord {
   return {
@@ -53,8 +49,6 @@ function mapStoredSnapshot(record: {
     sessionCount: record.sessionCount ?? null,
     backupBundleStorageId: record.backupBundleStorageId ?? null,
     backupBundleSize: record.backupBundleSize ?? null,
-    backupSessionsStorageId: record.backupSessionsStorageId ?? null,
-    backupSessionsSize: record.backupSessionsSize ?? null,
     updatedAt: record.updatedAt,
   };
 }
@@ -70,8 +64,6 @@ export async function saveStoredSnapshot(
     sessionCount?: number | null;
     backupBundleStorageId?: StorageAssetId | null;
     backupBundleSize?: number | null;
-    backupSessionsStorageId?: StorageAssetId | null;
-    backupSessionsSize?: number | null;
   },
 ): Promise<StoredSnapshotRecord> {
   const nextSnapshot = {
@@ -79,8 +71,6 @@ export async function saveStoredSnapshot(
     sessionCount: metadata?.sessionCount ?? null,
     backupBundleStorageId: metadata?.backupBundleStorageId ?? null,
     backupBundleSize: metadata?.backupBundleSize ?? null,
-    backupSessionsStorageId: metadata?.backupSessionsStorageId ?? null,
-    backupSessionsSize: metadata?.backupSessionsSize ?? null,
   } satisfies StoredSnapshotRecord;
 
   await fetchMutation(api.snapshots.upsert, {
@@ -130,10 +120,6 @@ async function uploadBackupAsset(buffer: Buffer, contentType: string): Promise<S
 
 export async function uploadStoredBackupBundle(buffer: Buffer) {
   return await uploadBackupAsset(buffer, 'application/gzip');
-}
-
-export async function uploadStoredBackupSessions(buffer: Buffer) {
-  return await uploadBackupAsset(buffer, 'application/json');
 }
 
 export async function downloadStoredBackupAsset(storageId: StorageAssetId | null | undefined) {

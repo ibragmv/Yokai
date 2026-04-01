@@ -92,8 +92,6 @@ export type StoredSnapshotRecord = {
   sessionCount: number | null;
   backupBundleStorageId: StorageAssetId | null;
   backupBundleSize: number | null;
-  backupSessionsStorageId: StorageAssetId | null;
-  backupSessionsSize: number | null;
   updatedAt: number;
 };
 

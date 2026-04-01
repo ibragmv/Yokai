@@ -34,8 +34,6 @@ export const snapshotValueValidator = v.object({
   sessionCount: v.optional(v.union(v.number(), v.null())),
   backupBundleStorageId: v.optional(v.union(v.id('_storage'), v.null())),
   backupBundleSize: v.optional(v.union(v.number(), v.null())),
-  backupSessionsStorageId: v.optional(v.union(v.id('_storage'), v.null())),
-  backupSessionsSize: v.optional(v.union(v.number(), v.null())),
   updatedAt: v.number(),
 });
 
@@ -57,8 +55,6 @@ export const snapshotRecordValidator = v.object({
   sessionCount: v.optional(v.union(v.number(), v.null())),
   backupBundleStorageId: v.optional(v.union(v.id('_storage'), v.null())),
   backupBundleSize: v.optional(v.union(v.number(), v.null())),
-  backupSessionsStorageId: v.optional(v.union(v.id('_storage'), v.null())),
-  backupSessionsSize: v.optional(v.union(v.number(), v.null())),
   updatedAt: v.number(),
 });
 

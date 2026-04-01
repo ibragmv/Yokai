@@ -155,6 +155,7 @@ Use an external scheduler if you want sandbox rollover and recovery to continue 
 - `Start sandbox` creates a new Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`
 - when auto-recreate is enabled, Yokai attempts lifecycle reconciliation during dashboard page loads, `/api/overview` refreshes, and `/api/internal/sandbox-rollover` calls
 - during that reconciliation, Yokai snapshots the active sandbox shortly before TTL expiry, stores the latest `snapshotId` plus a Convex-backed handoff bundle, and restores the replacement sandbox only from the Convex backup
+- if the Convex backup is missing or corrupted, Yokai discards that broken snapshot record and falls back to a clean sandbox boot
 - if a sandbox has already stopped or expired, auto-recreate can also recover it on the next reconciliation request
 - if you manually stop the sandbox while auto-recreate remains enabled, the next reconciliation request can start it again
 - if nobody opens the dashboard and no external scheduler pings `/api/internal/sandbox-rollover`, an expired sandbox remains stopped until the next request
@@ -167,11 +168,11 @@ Use an external scheduler if you want sandbox rollover and recovery to continue 
 Convex stores three main data areas:
 
 - `states`: the persisted dashboard payload, including sandbox status, settings, sessions, commands, and usage snapshots
-- `snapshots`: the latest persisted sandbox snapshot metadata plus Convex storage references for the handoff bundle and exported session payload used during restore
+- `snapshots`: the latest persisted sandbox snapshot metadata plus the Convex storage reference for the handoff bundle used during restore
 - `credentials`: admin login and password hash metadata
 - `sessions`: active admin sessions used for cookie validation
 
 Sensitive settings such as bot tokens, gateway keys, and Vercel API tokens are encrypted before they are written to Convex.
 
 Snapshot recovery uses the Convex handoff bundle as the only restore source.
-The stored Convex snapshot record is preserved even if the matching remote Vercel snapshot disappears or is deleted.
+The matching remote Vercel snapshot is not used for restore, and if the Convex handoff bundle is missing or damaged, Yokai falls back to a clean boot.
