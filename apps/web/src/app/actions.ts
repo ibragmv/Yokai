@@ -167,7 +167,6 @@ export async function runSandboxAction(action: SandboxAction): Promise<Dashboard
           state.sandbox.sandboxId,
           state.settings,
         );
-        await stopOpenClawSandbox(state.sandbox.sandboxId);
         await updateDashboardState((current) => ({
           ...current,
           sessions: synced?.sessions ?? current.sessions,

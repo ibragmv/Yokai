@@ -1,5 +1,9 @@
+import type { Id } from '@convex/_generated/dataModel';
+
 export type SandboxStatus = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 export type SandboxOperationType = 'start' | 'stop' | 'sync' | 'reconcile';
+
+export type StorageAssetId = Id<'_storage'>;
 
 export type SandboxOperationLease = {
   owner: string;
@@ -86,6 +90,10 @@ export type StoredSnapshotRecord = {
   createdAt: number;
   expiresAt: number | null;
   sessionCount: number | null;
+  backupBundleStorageId: StorageAssetId | null;
+  backupBundleSize: number | null;
+  backupSessionsStorageId: StorageAssetId | null;
+  backupSessionsSize: number | null;
   updatedAt: number;
 };
 
