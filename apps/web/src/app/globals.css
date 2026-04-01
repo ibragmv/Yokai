@@ -1,27 +1,55 @@
+/* ─── Sekiro: Dark Japan Theme ─────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700;900&display=swap');
+
 :root {
   color-scheme: dark;
-  --font-display: "Avenir Next", Avenir, "Segoe UI", ui-sans-serif, system-ui, -apple-system,
-    sans-serif;
-  --font-mono: "SFMono-Regular", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
-  --bg-base: #08111d;
-  --bg-elevated: rgba(13, 24, 40, 0.9);
-  --bg-soft: rgba(13, 24, 40, 0.72);
-  --bg-input: rgba(7, 14, 24, 0.86);
-  --border-soft: rgba(154, 176, 204, 0.16);
-  --border-strong: rgba(154, 176, 204, 0.26);
-  --text-primary: #eef5ff;
-  --text-secondary: rgba(222, 233, 247, 0.8);
-  --text-muted: rgba(182, 198, 220, 0.68);
-  --accent: #91c0ff;
-  --accent-strong: #5686db;
-  --success: #8ce2b4;
-  --warning: #f2ca84;
-  --danger: #f4a8b1;
-  --shadow-soft: 0 24px 64px rgba(0, 7, 16, 0.38);
-  --shadow-panel: 0 16px 42px rgba(0, 7, 16, 0.3);
-  --ring: 0 0 0 4px rgba(86, 134, 219, 0.24);
+
+  /* Fonts */
+  --font-display: var(--font-display, 'Noto Serif JP'), 'Georgia', 'Times New Roman', serif;
+  --font-mono: var(--font-mono, 'Space Mono'), 'SFMono-Regular', 'SF Mono', ui-monospace, monospace;
+
+  /* ── Color Palette (5 total) ── */
+  /* Base — charcoal ink / deep sumi */
+  --bg-base:     #0d0a08;
+  /* Elevated — smoked parchment */
+  --bg-elevated: rgba(22, 16, 12, 0.92);
+  /* Soft layer — warm charcoal */
+  --bg-soft:     rgba(28, 20, 14, 0.78);
+  /* Input — darkest ink */
+  --bg-input:    rgba(10, 7, 5, 0.88);
+
+  /* Text */
+  --text-primary:   #e8d9c0;   /* warm parchment */
+  --text-secondary: rgba(220, 200, 172, 0.82);
+  --text-muted:     rgba(180, 155, 120, 0.65);
+
+  /* Accent — blood / vermillion (Sekiro red) */
+  --accent:        #c0392b;
+  --accent-strong: #8b1a10;
+  --accent-glow:   rgba(192, 57, 43, 0.32);
+
+  /* Status colors — earthy tones */
+  --success:  #7db87a;   /* mossy green */
+  --warning:  #c9955a;   /* aged bronze */
+  --danger:   #c0392b;   /* blood red */
+
+  /* Borders — cracked lacquer lines */
+  --border-soft:   rgba(180, 140, 90, 0.14);
+  --border-strong: rgba(180, 140, 90, 0.28);
+  --border-accent: rgba(192, 57, 43, 0.36);
+
+  /* Shadows — deep ink */
+  --shadow-soft:  0 24px 64px rgba(0, 0, 0, 0.72);
+  --shadow-panel: 0 12px 36px rgba(0, 0, 0, 0.56);
+
+  /* Focus ring */
+  --ring: 0 0 0 3px rgba(192, 57, 43, 0.36);
+
+  /* Ink scratch texture overlay via box-shadow on cards */
+  --ink-mark: inset 0 1px 0 rgba(180, 140, 90, 0.08);
 }
 
+/* ─── Reset ──────────────────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
 }
@@ -34,15 +62,35 @@ html {
   overflow-x: hidden;
 }
 
+/* Background: deep charcoal with subtle ink-washed pattern */
 body {
   min-height: 100vh;
   margin: 0;
   background: transparent;
   color: var(--text-primary);
   font-family: var(--font-display);
-  line-height: 1.55;
+  line-height: 1.6;
   overflow-x: hidden;
-  -webkit-tap-highlight-color: rgba(145, 192, 255, 0.14);
+  -webkit-tap-highlight-color: rgba(192, 57, 43, 0.14);
+}
+
+/* Ink-wash SVG background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(ellipse 120% 60% at 10% 0%, rgba(192, 57, 43, 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 80% at 90% 100%, rgba(120, 80, 40, 0.07) 0%, transparent 50%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(180, 140, 90, 0.012) 3px,
+      rgba(180, 140, 90, 0.012) 4px
+    );
 }
 
 a {
@@ -68,16 +116,16 @@ textarea,
 select {
   width: 100%;
   border: 1px solid var(--border-soft);
-  border-radius: 18px;
+  border-radius: 4px;
   background: var(--bg-input);
   color: var(--text-primary);
-  padding: 0.92rem 1rem;
-  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+  padding: 0.82rem 1rem;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: rgba(182, 198, 220, 0.48);
+  color: rgba(180, 155, 120, 0.38);
 }
 
 input:disabled,
@@ -85,7 +133,7 @@ textarea:disabled,
 select:disabled,
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.58;
+  opacity: 0.48;
 }
 
 :focus-visible {
@@ -96,18 +144,19 @@ button:disabled {
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  border-color: rgba(145, 192, 255, 0.54);
-  background: rgba(10, 18, 30, 0.96);
+  border-color: rgba(192, 57, 43, 0.5);
+  background: rgba(14, 9, 6, 0.96);
 }
 
+/* ─── Skip Link ──────────────────────────────────────────────────────────── */
 .skip-link {
   position: absolute;
   left: 1rem;
   top: 1rem;
   z-index: 20;
   padding: 0.7rem 1rem;
-  border-radius: 999px;
-  background: rgba(10, 18, 30, 0.96);
+  border-radius: 4px;
+  background: rgba(14, 9, 6, 0.96);
   color: var(--text-primary);
   border: 1px solid var(--border-strong);
   transform: translateY(-160%);
@@ -118,6 +167,7 @@ select:focus-visible {
   transform: translateY(0);
 }
 
+/* ─── Page Shell ─────────────────────────────────────────────────────────── */
 .dashboard-page {
   position: relative;
   min-height: 100vh;
@@ -125,23 +175,28 @@ select:focus-visible {
     env(safe-area-inset-left, 0);
 }
 
+/* Ink-wash top vignette */
 .dashboard-backdrop {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
-  filter: none;
+  z-index: 0;
+  background:
+    linear-gradient(180deg, rgba(192, 57, 43, 0.04) 0%, transparent 28%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0%, transparent 20%);
 }
 
 .dashboard-frame {
   position: relative;
+  z-index: 1;
   width: min(1240px, calc(100% - 2rem));
   margin: 0 auto;
-  padding: 1.5rem 0 2.5rem;
+  padding: 1.5rem 0 3rem;
   display: grid;
   gap: 1.1rem;
 }
 
+/* ─── Shared Panel Surfaces ──────────────────────────────────────────────── */
 .hero-panel,
 .surface-card,
 .stat-panel,
@@ -151,10 +206,32 @@ select:focus-visible {
   min-width: 0;
   border: 1px solid var(--border-soft);
   background: var(--bg-elevated);
-  backdrop-filter: blur(18px);
-  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-soft), var(--ink-mark);
+  /* Sharp katana-cut corners — very slight radius */
+  border-radius: 6px;
 }
 
+/* Accent red top edge on major panels */
+.hero-panel::before,
+.surface-card::before {
+  content: '';
+  display: block;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent 60%);
+  border-radius: 6px 6px 0 0;
+  pointer-events: none;
+}
+
+.hero-panel,
+.surface-card {
+  position: relative;
+  overflow: hidden;
+}
+
+/* ─── Layout Grid Primitives ─────────────────────────────────────────────── */
 .hero-panel,
 .content-grid,
 .settings-layout,
@@ -168,10 +245,9 @@ select:focus-visible {
 }
 
 .hero-panel {
-  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
   align-items: start;
-  border-radius: 32px;
-  padding: 1.4rem;
+  padding: 1.5rem;
 }
 
 .hero-copy,
@@ -211,11 +287,12 @@ select:focus-visible {
   gap: 0.9rem;
 }
 
+/* ─── Brand Mark ──────────────────────────────────────────────────────────── */
 .brand-mark {
   width: 3rem;
   height: 3rem;
   flex: none;
-  filter: drop-shadow(0 10px 20px rgba(0, 7, 16, 0.28));
+  filter: drop-shadow(0 6px 18px rgba(192, 57, 43, 0.42));
 }
 
 .brand-copy {
@@ -224,10 +301,14 @@ select:focus-visible {
 }
 
 .brand-copy strong {
-  font-size: 1.14rem;
-  letter-spacing: -0.03em;
+  font-size: 1.18rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 900;
+  color: var(--text-primary);
 }
 
+/* ─── Text Utility Classes ───────────────────────────────────────────────── */
 .brand-copy span,
 .hero-facts dt,
 .status-label,
@@ -259,11 +340,12 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+/* Eyebrow — small caps with letter-spacing, red accent */
 .brand-copy span,
 .eyebrow,
 .status-label {
-  font-size: 0.76rem;
-  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
 }
 
@@ -273,22 +355,38 @@ select:focus-visible {
   font-weight: 700;
 }
 
+/* ─── Hero Heading ───────────────────────────────────────────────────────── */
 .hero-copy h1,
 .state-card h1 {
   margin: 0;
-  font-size: clamp(2.2rem, 6vw, 4.5rem);
-  line-height: 0.95;
-  letter-spacing: -0.06em;
+  font-size: clamp(2rem, 5.5vw, 4rem);
+  line-height: 1.0;
+  letter-spacing: -0.04em;
+  font-weight: 900;
   text-wrap: balance;
+  color: var(--text-primary);
+}
+
+/* Vertical red ink stroke accent before h1 */
+.hero-copy h1::before {
+  content: '丨';
+  display: inline-block;
+  color: var(--accent);
+  margin-right: 0.3em;
+  font-weight: 400;
+  opacity: 0.72;
 }
 
 .hero-text,
 .state-copy {
   margin: 0;
   color: var(--text-secondary);
-  max-width: 62ch;
+  max-width: 58ch;
+  font-size: 0.95rem;
+  line-height: 1.65;
 }
 
+/* ─── Hero Facts (3-col data row) ────────────────────────────────────────── */
 .hero-facts {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
@@ -301,9 +399,9 @@ select:focus-visible {
 .command-card,
 .state-card,
 .stat-panel {
-  border-radius: 24px;
-  border: 1px solid rgba(154, 176, 204, 0.12);
-  background: linear-gradient(180deg, rgba(11, 20, 34, 0.98), rgba(10, 18, 30, 0.88));
+  border-radius: 4px;
+  border: 1px solid var(--border-soft);
+  background: linear-gradient(160deg, rgba(24, 16, 10, 0.98), rgba(16, 10, 6, 0.9));
   box-shadow: var(--shadow-panel);
 }
 
@@ -331,7 +429,7 @@ select:focus-visible {
 
 .hero-facts dt,
 .data-grid dt {
-  margin-bottom: 0.34rem;
+  margin-bottom: 0.3rem;
 }
 
 .hero-facts dd,
@@ -340,13 +438,14 @@ select:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* ─── Status Card ─────────────────────────────────────────────────────────── */
 .status-card {
   display: grid;
   gap: 0.75rem;
 }
 
 .status-linkish {
-  font-size: 0.96rem;
+  font-size: 0.94rem;
 }
 
 .status-copy {
@@ -364,6 +463,7 @@ select:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* ─── Section Nav / Toolbar ──────────────────────────────────────────────── */
 .section-nav {
   flex-wrap: wrap;
 }
@@ -372,98 +472,152 @@ select:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 0.8rem;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
 }
 
 .action-row {
   flex-wrap: wrap;
 }
 
+/* ─── Buttons ────────────────────────────────────────────────────────────── */
 .primary-button,
 .secondary-button,
 .ghost-link,
 .segment {
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 3px;
   cursor: pointer;
-  transition: transform 140ms ease, border-color 140ms ease, background-color 140ms ease, color
-    140ms ease;
+  transition: transform 140ms ease, border-color 180ms ease, background-color 180ms ease,
+    color 180ms ease, box-shadow 180ms ease;
 }
 
 .primary-button,
 .secondary-button,
 .ghost-link {
-  padding: 0.82rem 1.08rem;
-  font-weight: 650;
+  padding: 0.74rem 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
 }
 
+/* Primary: blood-lacquer red */
 .primary-button {
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-  color: #07111d;
-  box-shadow: 0 10px 28px rgba(86, 134, 219, 0.26);
+  background: var(--accent);
+  color: #f5e8d8;
+  border-color: var(--accent-strong);
+  box-shadow: 0 4px 20px rgba(192, 57, 43, 0.36), inset 0 1px 0 rgba(255, 180, 150, 0.18);
 }
 
-.secondary-button,
-.ghost-link,
-.segment {
-  background: rgba(12, 21, 36, 0.84);
-  border-color: var(--border-soft);
-  color: var(--text-primary);
-}
-
-.primary-button:hover,
-.secondary-button:hover,
-.ghost-link:hover,
-.segment:hover,
-.inline-link:hover {
+.primary-button:not(:disabled):hover {
+  background: #d44030;
+  box-shadow: 0 6px 28px rgba(192, 57, 43, 0.52), inset 0 1px 0 rgba(255, 180, 150, 0.22);
   transform: translateY(-1px);
 }
 
+/* Secondary: dark lacquer */
+.secondary-button,
+.ghost-link {
+  background: rgba(22, 15, 10, 0.86);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.secondary-button:not(:disabled):hover,
+.ghost-link:not(:disabled):hover {
+  border-color: rgba(192, 57, 43, 0.44);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+/* Segments (tabs) */
 .segment {
-  padding: 0.72rem 1rem;
-  font-weight: 600;
+  padding: 0.62rem 1rem;
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: rgba(20, 14, 9, 0.82);
+  border-color: var(--border-soft);
+  color: var(--text-muted);
 }
 
-.segment[data-active="true"] {
-  background: linear-gradient(180deg, rgba(145, 192, 255, 0.95), rgba(86, 134, 219, 0.95));
-  color: #08111d;
-  border-color: transparent;
+.segment[data-active='true'] {
+  background: var(--accent);
+  color: #f5e8d8;
+  border-color: var(--accent-strong);
+  box-shadow: 0 3px 14px rgba(192, 57, 43, 0.38);
 }
 
-.notice-banner,
-.alert-banner {
-  border-radius: 20px;
-  padding: 0.95rem 1rem;
-}
-
-.notice-banner {
+.segment:not([data-active='true']):hover {
+  border-color: var(--border-accent);
   color: var(--text-primary);
 }
 
-.alert-banner {
-  color: #ffd9de;
-  border-color: rgba(244, 168, 177, 0.24);
-  background: rgba(79, 19, 30, 0.56);
+/* ─── Inline Link ─────────────────────────────────────────────────────────── */
+.inline-link {
+  display: inline-flex;
+  margin-top: 1rem;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.88rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
 }
 
+.inline-link:hover {
+  color: #d44030;
+}
+
+/* ─── Banners ────────────────────────────────────────────────────────────── */
+.notice-banner,
+.alert-banner {
+  border-radius: 4px;
+  padding: 0.9rem 1.1rem;
+  font-size: 0.9rem;
+}
+
+.notice-banner {
+  color: var(--text-secondary);
+  border-color: var(--border-soft);
+}
+
+.alert-banner {
+  color: #ffc8c0;
+  border-color: rgba(192, 57, 43, 0.28);
+  background: rgba(60, 12, 8, 0.58);
+}
+
+/* ─── Stat Grid ──────────────────────────────────────────────────────────── */
 .stat-grid {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  display: grid;
+  gap: 1rem;
 }
 
 .stat-panel strong {
   display: block;
-  margin-top: 0.44rem;
-  font-size: clamp(1.65rem, 4vw, 2.4rem);
+  margin-top: 0.42rem;
+  font-size: clamp(1.5rem, 3.5vw, 2.2rem);
   line-height: 1;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.04em;
   text-transform: capitalize;
+  color: var(--text-primary);
 }
 
 .stat-panel small {
   display: block;
-  margin-top: 0.7rem;
+  margin-top: 0.65rem;
 }
 
+/* Left red border accent on stat panels */
+.stat-panel {
+  border-left: 2px solid var(--accent);
+  padding-left: 1rem;
+}
+
+/* ─── Content Grid ───────────────────────────────────────────────────────── */
 .content-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
@@ -493,12 +647,14 @@ select:focus-visible {
   height: clamp(26rem, 62vh, 40rem);
 }
 
+/* ─── Surface Card ───────────────────────────────────────────────────────── */
 .surface-card {
-  border-radius: 28px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   align-content: start;
   height: 100%;
+  padding: 1.25rem;
+  gap: 1rem;
 }
 
 .card-heading {
@@ -507,24 +663,19 @@ select:focus-visible {
 
 .card-heading h2 {
   margin: 0.1rem 0 0;
-  font-size: 1.34rem;
-  letter-spacing: -0.03em;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
   text-wrap: balance;
+  font-weight: 700;
 }
 
 .data-grid {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
-.inline-link {
-  display: inline-flex;
-  margin-top: 1rem;
-  color: var(--accent);
-  font-weight: 600;
-}
-
+/* ─── Section Stack / Scroll ─────────────────────────────────────────────── */
 .section-stack {
-  min-height: clamp(34rem, 68vh, 48rem);
+  min-height: clamp(32rem, 64vh, 46rem);
 }
 
 .section-scroll {
@@ -535,13 +686,13 @@ select:focus-visible {
 }
 
 .section-scroll::-webkit-scrollbar {
-  width: 0.72rem;
+  width: 0.6rem;
 }
 
 .section-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  border: 0.18rem solid transparent;
-  background: rgba(145, 192, 255, 0.22);
+  border-radius: 2px;
+  border: 0.14rem solid transparent;
+  background: rgba(192, 57, 43, 0.28);
   background-clip: padding-box;
 }
 
@@ -549,6 +700,7 @@ select:focus-visible {
   background: transparent;
 }
 
+/* ─── Stack Rows ─────────────────────────────────────────────────────────── */
 .stack-row,
 .command-card {
   display: grid;
@@ -585,6 +737,7 @@ select:focus-visible {
   text-align: right;
 }
 
+/* ─── Command Output ─────────────────────────────────────────────────────── */
 .command-header {
   align-items: flex-start;
 }
@@ -594,51 +747,55 @@ select:focus-visible {
 }
 
 .command-timestamp {
-  font-size: 0.92rem;
+  font-size: 0.88rem;
 }
 
 .footer-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.7rem;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
 }
 
+/* ─── Status Pills ───────────────────────────────────────────────────────── */
 .status-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.46rem 0.82rem;
-  border-radius: 999px;
+  padding: 0.36rem 0.72rem;
+  border-radius: 2px;
   border: 1px solid transparent;
-  background: rgba(42, 57, 78, 0.38);
-  font-size: 0.8rem;
+  background: rgba(30, 20, 14, 0.5);
+  font-size: 0.74rem;
   font-weight: 700;
-  text-transform: capitalize;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-family: var(--font-mono);
 }
 
 .status-running,
 .status-succeeded {
   color: var(--success);
-  border-color: rgba(140, 226, 180, 0.16);
-  background: rgba(17, 65, 43, 0.34);
+  border-color: rgba(125, 184, 122, 0.22);
+  background: rgba(20, 46, 22, 0.44);
 }
 
 .status-starting,
 .status-idle {
   color: var(--warning);
-  border-color: rgba(242, 202, 132, 0.16);
-  background: rgba(69, 49, 17, 0.34);
+  border-color: rgba(201, 149, 90, 0.22);
+  background: rgba(52, 36, 16, 0.44);
 }
 
 .status-stopped,
 .status-error,
 .status-failed {
   color: var(--danger);
-  border-color: rgba(244, 168, 177, 0.18);
-  background: rgba(71, 23, 34, 0.34);
+  border-color: rgba(192, 57, 43, 0.24);
+  background: rgba(50, 12, 8, 0.48);
 }
 
+/* ─── Terminal / Mono ────────────────────────────────────────────────────── */
 .mono,
 .terminal-output {
   font-family: var(--font-mono);
@@ -651,17 +808,19 @@ select:focus-visible {
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  border-radius: 18px;
-  padding: 0.9rem;
-  background: rgba(5, 10, 16, 0.92);
-  color: #dbe8f8;
+  border-radius: 3px;
+  padding: 0.8rem;
+  background: rgba(6, 3, 2, 0.94);
+  color: #c8b89a;
+  border: 1px solid rgba(180, 140, 90, 0.12);
 }
 
 .terminal-error {
-  border: 1px solid rgba(244, 168, 177, 0.16);
-  color: #ffdbe1;
+  border: 1px solid rgba(192, 57, 43, 0.22);
+  color: #ffb8b0;
 }
 
+/* ─── Forms ──────────────────────────────────────────────────────────────── */
 .form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -669,20 +828,20 @@ select:focus-visible {
 .field,
 .checkbox-field {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.5rem;
 }
 
 .field span,
 .checkbox-field span {
-  font-size: 0.92rem;
+  font-size: 0.88rem;
 }
 
 .checkbox-field {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: 0.8rem;
-  padding: 0.9rem 1rem;
-  border-radius: 20px;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 4px;
   background: var(--bg-soft);
   border: 1px solid var(--border-soft);
 }
@@ -692,6 +851,7 @@ select:focus-visible {
   height: 1rem;
   margin-top: 0.18rem;
   padding: 0;
+  accent-color: var(--accent);
 }
 
 .settings-footer {
@@ -708,6 +868,7 @@ select:focus-visible {
   margin: 0;
 }
 
+/* ─── State / Auth Screens ───────────────────────────────────────────────── */
 .state-screen {
   min-height: 100vh;
   display: grid;
@@ -717,7 +878,6 @@ select:focus-visible {
 
 .state-card {
   width: min(560px, 100%);
-  border-radius: 30px;
 }
 
 .auth-screen .state-card {
@@ -728,6 +888,7 @@ select:focus-visible {
   margin-top: 0.25rem;
 }
 
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 980px) {
   .hero-panel,
   .content-grid,
@@ -737,7 +898,7 @@ select:focus-visible {
   }
 
   .hero-facts {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .section-stack {
@@ -751,23 +912,17 @@ select:focus-visible {
     padding-bottom: 1.5rem;
   }
 
-  .hero-panel,
-  .surface-card,
-  .section-stack,
-  .state-card,
-  .stat-panel,
-  .notice-banner,
-  .alert-banner {
-    border-radius: 24px;
+  .hero-facts {
+    grid-template-columns: 1fr;
   }
 
   .hero-panel {
-    padding: 1.05rem;
+    padding: 1rem;
   }
 
   .hero-copy h1,
   .state-card h1 {
-    font-size: clamp(1.9rem, 11vw, 3.2rem);
+    font-size: clamp(1.7rem, 9vw, 2.8rem);
   }
 
   .section-nav,
