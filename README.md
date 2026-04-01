@@ -5,7 +5,7 @@ Yokai is a private control room for running OpenClaw inside Vercel Sandbox. The 
 ## What It Does
 
 - boot, stop, and sync an OpenClaw sandbox
-- configure Telegram access, gateway credentials, default model, timeout, and Vercel project metadata
+- configure Telegram access, gateway credentials, default model, and timeout
 - auto-roll a sandbox before its TTL expires and restore it from the latest persisted snapshot when a dashboard or scheduler request triggers lifecycle reconciliation
 - bootstrap the first admin account from `/login`, then protect the dashboard with cookie-based sessions
 - show recent OpenClaw sessions, tracked sandbox commands, and usage snapshots
@@ -59,9 +59,6 @@ YOKAI_ALLOWED_ORIGINS=
 CRON_SECRET=
 AI_GATEWAY_API_KEY=
 VERCEL_OIDC_TOKEN=
-VERCEL_ACCESS_TOKEN=
-VERCEL_PROJECT_ID=
-VERCEL_TEAM_ID=
 ```
 
 Optional Convex target variables used by the deploy and log scripts:
@@ -81,7 +78,7 @@ Notes:
 - `YOKAI_ALLOWED_ORIGINS` controls the allowed origins for Next.js Server Actions.
 - `CRON_SECRET` protects the internal rollover endpoint for external schedulers such as `cron-job.org`. In local development, the rollover route is allowed without it when `NODE_ENV` is not `production`.
 - `autoRecreateSandbox` is not a background daemon by itself. Without an open dashboard or an external scheduler hitting the rollover endpoint, an expired sandbox stays down until the next request triggers reconciliation.
-- `AI_GATEWAY_API_KEY`, `VERCEL_ACCESS_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID` can be prefilled from env or later managed from the dashboard.
+- `AI_GATEWAY_API_KEY` can be prefilled from env or later managed from the dashboard.
 - `VERCEL_OIDC_TOKEN` is only available from env and is forwarded into the sandbox when present.
 - the `CONVEX_*_DEV` and `CONVEX_*_PROD` variables are only needed for the explicit `convex:deploy:*` and `convex:logs:*` helper scripts.
 
@@ -172,7 +169,7 @@ Convex stores three main data areas:
 - `credentials`: admin login and password hash metadata
 - `sessions`: active admin sessions used for cookie validation
 
-Sensitive settings such as bot tokens, gateway keys, and Vercel API tokens are encrypted before they are written to Convex.
+Sensitive settings such as bot tokens and gateway keys are encrypted before they are written to Convex.
 
 Snapshot recovery uses the Convex handoff bundle as the only restore source.
 The matching remote Vercel snapshot is not used for restore, and if the Convex handoff bundle is missing or damaged, Yokai falls back to a clean boot.

@@ -2,7 +2,6 @@ import 'server-only';
 
 import type { DashboardSettings } from '@/lib/types';
 import { splitCsv } from '@/lib/utils';
-import { resolveVercelProjectId, resolveVercelTeamId } from '@/lib/vercel/project';
 
 export function buildOpenClawConfig(settings: DashboardSettings): string {
   const allowedUsers = splitCsv(settings.allowedUserIds);
@@ -89,22 +88,6 @@ export function sandboxEnvironment(settings: DashboardSettings): Record<string, 
 
   if (process.env.VERCEL_OIDC_TOKEN) {
     env.VERCEL_OIDC_TOKEN = process.env.VERCEL_OIDC_TOKEN;
-  }
-
-  const vercelAccessToken = settings.vercelApiToken || process.env.VERCEL_ACCESS_TOKEN;
-  const vercelProjectId = settings.vercelProjectId || resolveVercelProjectId();
-  const vercelTeamId = settings.vercelTeamId || resolveVercelTeamId();
-
-  if (vercelAccessToken) {
-    env.VERCEL_ACCESS_TOKEN = vercelAccessToken;
-  }
-
-  if (vercelProjectId) {
-    env.VERCEL_PROJECT_ID = vercelProjectId;
-  }
-
-  if (vercelTeamId) {
-    env.VERCEL_TEAM_ID = vercelTeamId;
   }
 
   return env;

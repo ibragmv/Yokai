@@ -14,7 +14,6 @@ import type {
   SessionRecord,
   UsageSnapshot,
 } from '@/lib/types';
-import { resolveVercelProjectId, resolveVercelTeamId } from '@/lib/vercel/project';
 import { api } from '@convex/_generated/api';
 
 export type DashboardState = {
@@ -30,12 +29,7 @@ const STATE_KEY = 'primary';
 
 let writeQueue = Promise.resolve();
 
-const SECRET_SETTING_KEYS = [
-  'telegramBotToken',
-  'aiGatewayApiKey',
-  'vercelApiToken',
-  'gatewayAuthToken',
-] as const;
+const SECRET_SETTING_KEYS = ['telegramBotToken', 'aiGatewayApiKey', 'gatewayAuthToken'] as const;
 
 type SecretSettingKey = (typeof SECRET_SETTING_KEYS)[number];
 type EncryptedField = Awaited<ReturnType<typeof encryptValue>>;
@@ -92,9 +86,6 @@ function createDefaultState(): DashboardState {
       displayName: 'Yokai Control Room',
       telegramBotToken: '',
       aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY ?? '',
-      vercelApiToken: process.env.VERCEL_ACCESS_TOKEN ?? '',
-      vercelProjectId: resolveVercelProjectId(),
-      vercelTeamId: resolveVercelTeamId(),
       allowedUserIds: '',
       allowedGroupIds: '',
       requireMention: true,
@@ -116,8 +107,6 @@ function splitSettings(settings: DashboardSettings) {
   return {
     plainSettings: {
       displayName: settings.displayName,
-      vercelProjectId: settings.vercelProjectId,
-      vercelTeamId: settings.vercelTeamId,
       allowedUserIds: settings.allowedUserIds,
       allowedGroupIds: settings.allowedGroupIds,
       requireMention: settings.requireMention,
@@ -129,7 +118,6 @@ function splitSettings(settings: DashboardSettings) {
     secretSettings: {
       telegramBotToken: settings.telegramBotToken,
       aiGatewayApiKey: settings.aiGatewayApiKey,
-      vercelApiToken: settings.vercelApiToken,
       gatewayAuthToken: settings.gatewayAuthToken,
     },
   };

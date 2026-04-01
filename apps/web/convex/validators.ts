@@ -8,8 +8,6 @@ export const encryptedFieldValidator = v.object({
 
 export const settingsValidator = v.object({
   displayName: v.string(),
-  vercelProjectId: v.string(),
-  vercelTeamId: v.string(),
   allowedUserIds: v.string(),
   allowedGroupIds: v.string(),
   requireMention: v.boolean(),
@@ -22,7 +20,6 @@ export const settingsValidator = v.object({
 export const encryptedSettingsValidator = v.object({
   telegramBotToken: encryptedFieldValidator,
   aiGatewayApiKey: encryptedFieldValidator,
-  vercelApiToken: encryptedFieldValidator,
   gatewayAuthToken: encryptedFieldValidator,
 });
 

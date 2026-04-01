@@ -40,9 +40,6 @@ function createFormValues(payload: DashboardPayload): SettingsFormValues {
     displayName: payload.settings.displayName,
     telegramBotToken: payload.settings.telegramBotToken,
     aiGatewayApiKey: payload.settings.aiGatewayApiKey,
-    vercelApiToken: payload.settings.vercelApiToken,
-    vercelProjectId: payload.settings.vercelProjectId,
-    vercelTeamId: payload.settings.vercelTeamId,
     allowedUserIds: payload.settings.allowedUserIds,
     allowedGroupIds: payload.settings.allowedGroupIds,
     requireMention: payload.settings.requireMention,
@@ -498,58 +495,6 @@ function SettingsSection({
               spellCheck={false}
               type="password"
               value={draft.aiGatewayApiKey}
-            />
-          </label>
-
-          <label className="field">
-            <span>Vercel API Token</span>
-            <input
-              autoComplete="off"
-              name="vercelApiToken"
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  vercelApiToken: event.target.value,
-                }))
-              }
-              placeholder="Leave masked value to keep current token…"
-              spellCheck={false}
-              type="password"
-              value={draft.vercelApiToken}
-            />
-          </label>
-
-          <label className="field">
-            <span>Project ID</span>
-            <input
-              autoComplete="off"
-              name="vercelProjectId"
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  vercelProjectId: event.target.value,
-                }))
-              }
-              placeholder="prj_…"
-              spellCheck={false}
-              value={draft.vercelProjectId}
-            />
-          </label>
-
-          <label className="field">
-            <span>Team ID</span>
-            <input
-              autoComplete="off"
-              name="vercelTeamId"
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  vercelTeamId: event.target.value,
-                }))
-              }
-              placeholder="team_…"
-              spellCheck={false}
-              value={draft.vercelTeamId}
             />
           </label>
         </div>

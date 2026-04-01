@@ -7,12 +7,9 @@ function escapeForRegExp(value: string): string {
 }
 
 function collectSecrets(settings: DashboardSettings): string[] {
-  return [
-    settings.telegramBotToken,
-    settings.aiGatewayApiKey,
-    settings.vercelApiToken,
-    settings.gatewayAuthToken,
-  ].filter(Boolean);
+  return [settings.telegramBotToken, settings.aiGatewayApiKey, settings.gatewayAuthToken].filter(
+    Boolean,
+  );
 }
 
 export function redactSecrets(value: string | null | undefined, settings: DashboardSettings) {

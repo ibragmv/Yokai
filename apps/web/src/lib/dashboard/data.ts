@@ -12,7 +12,6 @@ function sanitizeSettings(settings: DashboardSettings): DashboardPublicSettings 
     ...settings,
     telegramBotToken: maskSecret(settings.telegramBotToken),
     aiGatewayApiKey: maskSecret(settings.aiGatewayApiKey),
-    vercelApiToken: maskSecret(settings.vercelApiToken),
     gatewayAuthToken: maskSecret(settings.gatewayAuthToken),
   };
 }

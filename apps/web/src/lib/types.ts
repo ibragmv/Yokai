@@ -16,9 +16,6 @@ export type SettingsFormValues = {
   displayName: string;
   telegramBotToken: string;
   aiGatewayApiKey: string;
-  vercelApiToken: string;
-  vercelProjectId: string;
-  vercelTeamId: string;
   allowedUserIds: string;
   allowedGroupIds: string;
   requireMention: boolean;

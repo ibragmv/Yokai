@@ -14,9 +14,7 @@ type Mode = 'deploy' | 'logs' | 'sync' | 'watch';
 const [, , targetArg, modeArg] = process.argv;
 
 if (!isTarget(targetArg) || !isMode(modeArg)) {
-  console.error(
-    'Usage: bun run scripts/convex-command.ts <dev|prod> <sync|watch|deploy|logs>',
-  );
+  console.error('Usage: bun run scripts/convex-command.ts <dev|prod> <sync|watch|deploy|logs>');
   process.exit(1);
 }
 
