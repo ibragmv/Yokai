@@ -91,15 +91,10 @@ function buildRuntimeEnv(target?: Target) {
       runtimeEnv,
       `NEXT_PUBLIC_CONVEX_URL_${suffix}`,
     );
-    runtimeEnv.NEXT_PUBLIC_CONVEX_SITE_URL = requireEnvValue(
-      runtimeEnv,
-      `NEXT_PUBLIC_CONVEX_SITE_URL_${suffix}`,
-    );
   }
 
   requireEnvValue(runtimeEnv, 'CONVEX_DEPLOYMENT');
   requireEnvValue(runtimeEnv, 'NEXT_PUBLIC_CONVEX_URL');
-  requireEnvValue(runtimeEnv, 'NEXT_PUBLIC_CONVEX_SITE_URL');
 
   return runtimeEnv;
 }

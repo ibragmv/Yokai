@@ -3,7 +3,7 @@ import 'server-only';
 import { SUPPORTED_MODEL_IDS, filterSupportedModelIds } from '@/lib/models';
 
 function getToken(apiKey?: string) {
-  return apiKey || process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
+  return apiKey || process.env.AI_GATEWAY_API_KEY;
 }
 
 export async function loadAvailableModels(apiKey?: string): Promise<string[]> {

@@ -66,15 +66,9 @@ export function buildOpenClawConfig(settings: DashboardSettings): string {
 }
 
 export function sandboxEnvironment(settings: DashboardSettings): Record<string, string> {
-  const env: Record<string, string> = {
+  return {
     AI_GATEWAY_API_KEY: settings.aiGatewayApiKey,
     OPENCLAW_GATEWAY_TOKEN: settings.gatewayAuthToken,
     TELEGRAM_BOT_TOKEN: settings.telegramBotToken,
   };
-
-  if (process.env.VERCEL_OIDC_TOKEN) {
-    env.VERCEL_OIDC_TOKEN = process.env.VERCEL_OIDC_TOKEN;
-  }
-
-  return env;
 }

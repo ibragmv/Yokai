@@ -145,7 +145,6 @@ Create a Convex project and collect these values:
 
 - `CONVEX_DEPLOYMENT`
 - `NEXT_PUBLIC_CONVEX_URL`
-- `NEXT_PUBLIC_CONVEX_SITE_URL`
 
 ### 3. Create a stable encryption secret
 
@@ -158,7 +157,6 @@ For production, set:
 - `NEXT_PUBLIC_APP_URL`
 - `CONVEX_DEPLOYMENT`
 - `NEXT_PUBLIC_CONVEX_URL`
-- `NEXT_PUBLIC_CONVEX_SITE_URL`
 - `YOKAI_ENCRYPTION_KEY`
 
 Recommended production variables:
@@ -169,7 +167,6 @@ Recommended production variables:
 Optional runtime variables:
 
 - `AI_GATEWAY_API_KEY`
-- `VERCEL_OIDC_TOKEN`
 
 ### 5. Import the repository into Vercel
 
@@ -196,7 +193,6 @@ Copy `apps/web/.env.example` to `apps/web/.env` for local work.
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 CONVEX_DEPLOYMENT=
 NEXT_PUBLIC_CONVEX_URL=
-NEXT_PUBLIC_CONVEX_SITE_URL=
 YOKAI_ENCRYPTION_KEY=
 ```
 
@@ -211,7 +207,6 @@ CRON_SECRET=
 
 ```dotenv
 AI_GATEWAY_API_KEY=
-VERCEL_OIDC_TOKEN=
 ```
 
 ### Variable notes
@@ -220,7 +215,6 @@ VERCEL_OIDC_TOKEN=
 - `YOKAI_ALLOWED_ORIGINS` controls allowed origins for Next.js Server Actions.
 - `CRON_SECRET` protects the rollover endpoint in production.
 - `AI_GATEWAY_API_KEY` enables Gateway model discovery and credit snapshots and can also be supplied later from the dashboard.
-- `VERCEL_OIDC_TOKEN` is env-only and is forwarded into the sandbox when present.
 
 ## Local Development
 
