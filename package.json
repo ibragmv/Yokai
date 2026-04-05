@@ -2,34 +2,23 @@
   "name": "yokai",
   "private": true,
   "packageManager": "bun@1.3.10",
+  "workspaces": ["apps/*"],
   "scripts": {
-    "dev": "next dev --turbopack",
-    "start": "next start",
-    "build": "next build",
-    "lint": "biome check src convex scripts next.config.ts",
-    "typecheck": "next typegen && tsc --noEmit",
-    "types": "bun run typecheck",
+    "dev": "turbo run dev --filter=web",
+    "start": "bun run --cwd apps/web start",
+    "build": "turbo run build --filter=web",
+    "lint": "turbo run lint --filter=web",
+    "typecheck": "turbo run typecheck --filter=web",
+    "types": "turbo run types --filter=web",
     "format": "biome format --write .",
-    "check": "bun run lint && bun run typecheck",
-    "convex": "bun run scripts/convex-command.ts watch",
-    "sync": "bun run scripts/convex-command.ts sync",
-    "deploy": "bun run scripts/convex-command.ts deploy",
-    "logs": "bun run scripts/convex-command.ts logs"
-  },
-  "dependencies": {
-    "@vercel/analytics": "^2.0.1",
-    "@vercel/sandbox": "^1.8.0",
-    "@vercel/speed-insights": "^2.0.0",
-    "convex": "^1.34.1",
-    "next": "^16.0.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "check": "turbo run check --filter=web",
+    "convex": "bun run --cwd apps/web scripts/convex-command.ts watch",
+    "sync": "bun run --cwd apps/web scripts/convex-command.ts sync",
+    "deploy": "bun run --cwd apps/web scripts/convex-command.ts deploy",
+    "logs": "bun run --cwd apps/web scripts/convex-command.ts logs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "@types/node": "^24.6.0",
-    "@types/react": "^19.1.2",
-    "@types/react-dom": "^19.1.2",
     "turbo": "^2.7.4",
     "typescript": "^5.8.2"
   }

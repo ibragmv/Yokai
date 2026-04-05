@@ -4,6 +4,14 @@
   "workspaces": {
     "": {
       "name": "yokai",
+      "devDependencies": {
+        "@biomejs/biome": "1.9.4",
+        "turbo": "^2.7.4",
+        "typescript": "^5.8.2",
+      },
+    },
+    "apps/web": {
+      "name": "web",
       "dependencies": {
         "@vercel/analytics": "^2.0.1",
         "@vercel/sandbox": "^1.8.0",
@@ -14,12 +22,9 @@
         "react-dom": "^19.1.0",
       },
       "devDependencies": {
-        "@biomejs/biome": "1.9.4",
         "@types/node": "^24.6.0",
         "@types/react": "^19.1.2",
         "@types/react-dom": "^19.1.2",
-        "turbo": "^2.7.4",
-        "typescript": "^5.8.2",
       },
     },
   },
@@ -265,6 +270,8 @@
     "undici": ["undici@7.24.6", "", {}, "sha512-Xi4agocCbRzt0yYMZGMA6ApD7gvtUFaxm4ZmeacWI4cZxaF6C+8I8QfofC20NAePiB/IcvZmzkJ7XPa471AEtA=="],
 
     "undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
+
+    "web": ["web@workspace:apps/web"],
 
     "ws": ["ws@8.18.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-8VbfWfHLbbwu3+N6OKsOMpBdT4kXPDDB9cJk2bJ6mh9ucxdlnNvH1e+roYkKmN9Nxw2yjz7VzeO9oOz2zJ04Pw=="],
 

@@ -8,7 +8,7 @@ Yokai is a private control room for running OpenClaw inside Vercel Sandbox. It g
 - Convex-backed persistence for state, snapshots, sessions, and command history
 - Request-driven sandbox rollover and recovery
 - Production-safe secret masking and encryption at rest
-- Bun-first repository with Turborepo task orchestration and a clean self-hosted setup path
+- Bun-first Turborepo with a clean self-hosted setup path
 
 ## Feature Highlights
 
@@ -71,13 +71,15 @@ Suggested captions:
 
 ```text
 .
-├── src/app                # App Router pages, route handlers, server actions
-├── src/components         # Dashboard UI
-├── src/lib                # Auth, store, sandbox, gateway, security logic
-├── convex                 # Convex schema, validators, queries, mutations
-├── scripts                # Local helpers such as Convex command wrappers
-├── .env.example           # Publish-safe environment template
-├── package.json           # App scripts and dependencies
+├── apps/web
+│   ├── src/app            # App Router pages, route handlers, server actions
+│   ├── src/components     # Dashboard UI
+│   ├── src/lib            # Auth, store, sandbox, gateway, security logic
+│   ├── convex             # Convex schema, validators, queries, mutations
+│   ├── scripts            # Local helpers such as Convex command wrappers
+│   └── .env.example       # Publish-safe environment template
+├── turbo.json             # Turborepo task graph
+├── package.json           # Workspace orchestration
 └── README.md
 ```
 
@@ -101,12 +103,12 @@ bun install
 2. Create your local environment file.
 
 ```bash
-cp .env.example .env
+cp apps/web/.env.example apps/web/.env
 ```
 
-3. Fill in the required values in `.env`.
+3. Fill in the required values in `apps/web/.env`.
 
-4. Sync Convex from the active variables in `.env`.
+4. Sync Convex from the active variables in `apps/web/.env`.
 
 ```bash
 bun run sync
@@ -171,7 +173,7 @@ Optional runtime variables:
 
 ### 5. Import the repository into Vercel
 
-Use the button above or import the repository manually in Vercel. Add the production environment variables from the previous step before the first deploy.
+Import the repository manually in Vercel. Add the production environment variables from the previous step before the first deploy.
 
 ### 6. Add a scheduler if you want unattended recovery
 
@@ -186,7 +188,7 @@ Without a scheduler, auto-recreate only runs when a dashboard request or overvie
 
 ## Environment Reference
 
-Copy `.env.example` to `.env` for local work.
+Copy `apps/web/.env.example` to `apps/web/.env` for local work.
 
 ### Required
 
@@ -261,10 +263,10 @@ bun run logs
 | `bun run types` | Generate Next.js route types and run TypeScript checks |
 | `bun run check` | Run `lint` and `types` together |
 | `bun run format` | Format the repository with Biome |
-| `bun run convex` | Start Convex dev watch mode with the active `.env` values |
-| `bun run sync` | Sync Convex once with the active `.env` values |
-| `bun run deploy` | Deploy Convex using the active `.env` values |
-| `bun run logs` | Read Convex logs using the active `.env` values |
+| `bun run convex` | Start Convex dev watch mode with the active `apps/web/.env` values |
+| `bun run sync` | Sync Convex once with the active `apps/web/.env` values |
+| `bun run deploy` | Deploy Convex using the active `apps/web/.env` values |
+| `bun run logs` | Read Convex logs using the active `apps/web/.env` values |
 
 ## Production Notes
 
@@ -327,7 +329,7 @@ Yes. The dashboard still works, but Gateway model discovery and credit reporting
 
 ### Which environment file should I commit?
 
-Commit `.env.example` only. Keep real credentials in `.env`, which is gitignored.
+Commit `apps/web/.env.example` only. Keep real credentials in `apps/web/.env`, which is gitignored.
 
 ## Self-Hosted Checklist
 

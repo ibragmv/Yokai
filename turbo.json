@@ -1,6 +1,6 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "globalDependencies": [".env", ".env.example"],
+  "globalDependencies": ["apps/web/.env", "apps/web/.env.example"],
   "globalEnv": [
     "AI_GATEWAY_API_KEY",
     "CONVEX_DEPLOYMENT",

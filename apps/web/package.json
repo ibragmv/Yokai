@@ -1,0 +1,27 @@
+{
+  "name": "web",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "biome check src convex scripts next.config.ts",
+    "typecheck": "next typegen && tsc --noEmit",
+    "types": "bun run typecheck",
+    "check": "bun run lint && bun run typecheck"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/sandbox": "^1.8.0",
+    "@vercel/speed-insights": "^2.0.0",
+    "convex": "^1.34.1",
+    "next": "^16.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2"
+  }
+}
