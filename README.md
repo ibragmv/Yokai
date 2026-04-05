@@ -112,7 +112,7 @@ cp apps/web/.env.example apps/web/.env
 
 3. Fill in the required values in `apps/web/.env`.
 
-4. Sync Convex for your development target.
+4. Sync Convex from the active variables in `apps/web/.env`.
 
 ```bash
 bun run sync
@@ -150,15 +150,6 @@ Create a Convex project and collect these values:
 - `CONVEX_DEPLOYMENT`
 - `NEXT_PUBLIC_CONVEX_URL`
 - `NEXT_PUBLIC_CONVEX_SITE_URL`
-
-If you want separate explicit targets for local helper commands, also define:
-
-- `CONVEX_DEPLOYMENT_DEV`
-- `NEXT_PUBLIC_CONVEX_URL_DEV`
-- `NEXT_PUBLIC_CONVEX_SITE_URL_DEV`
-- `CONVEX_DEPLOYMENT_PROD`
-- `NEXT_PUBLIC_CONVEX_URL_PROD`
-- `NEXT_PUBLIC_CONVEX_SITE_URL_PROD`
 
 ### 3. Create a stable encryption secret
 
@@ -227,17 +218,6 @@ AI_GATEWAY_API_KEY=
 VERCEL_OIDC_TOKEN=
 ```
 
-### Optional helper targets
-
-```dotenv
-CONVEX_DEPLOYMENT_DEV=
-NEXT_PUBLIC_CONVEX_URL_DEV=
-NEXT_PUBLIC_CONVEX_SITE_URL_DEV=
-CONVEX_DEPLOYMENT_PROD=
-NEXT_PUBLIC_CONVEX_URL_PROD=
-NEXT_PUBLIC_CONVEX_SITE_URL_PROD=
-```
-
 ### Variable notes
 
 - `YOKAI_ENCRYPTION_KEY` is mandatory for encrypted settings stored in Convex.
@@ -287,10 +267,10 @@ bun run logs
 | `bun run types` | Generate Next.js route types and run TypeScript checks |
 | `bun run check` | Run `lint` and `types` together |
 | `bun run format` | Format the repository with Biome |
-| `bun run convex` | Start Convex dev watch mode |
-| `bun run sync` | Sync Convex for the dev target once |
-| `bun run deploy` | Deploy Convex to the prod target |
-| `bun run logs` | Read Convex logs for the prod target |
+| `bun run convex` | Start Convex dev watch mode with the active `apps/web/.env` values |
+| `bun run sync` | Sync Convex once with the active `apps/web/.env` values |
+| `bun run deploy` | Deploy Convex using the active `apps/web/.env` values |
+| `bun run logs` | Read Convex logs using the active `apps/web/.env` values |
 
 ## Production Notes
 

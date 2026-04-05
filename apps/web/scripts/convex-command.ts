@@ -1,24 +1,24 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const rootDir = process.cwd();
 const envPath = join(rootDir, '.env');
-const envLocalPath = join(rootDir, '.env.local');
 const convexBinPath = join(rootDir, 'node_modules', '.bin', 'convex');
 
 type Target = 'dev' | 'prod';
 type Mode = 'deploy' | 'logs' | 'sync' | 'watch';
 
-const [, , targetArg, modeArg] = process.argv;
+const command = parseCommand(process.argv.slice(2));
 
-if (!isTarget(targetArg) || !isMode(modeArg)) {
-  console.error('Usage: bun run scripts/convex-command.ts <dev|prod> <sync|watch|deploy|logs>');
+if (!command) {
+  console.error(
+    'Usage: bun run scripts/convex-command.ts <sync|watch|deploy|logs> [dev|prod]',
+  );
   process.exit(1);
 }
 
-await main(targetArg, modeArg);
+await main(command.mode, command.target);
 
 function isTarget(value: string | undefined): value is Target {
   return value === 'dev' || value === 'prod';
@@ -28,7 +28,27 @@ function isMode(value: string | undefined): value is Mode {
   return value === 'deploy' || value === 'logs' || value === 'sync' || value === 'watch';
 }
 
+function parseCommand(args: string[]) {
+  const [firstArg, secondArg] = args;
+
+  if (isMode(firstArg)) {
+    return isTarget(secondArg) || secondArg === undefined
+      ? { mode: firstArg, target: secondArg }
+      : null;
+  }
+
+  if (isTarget(firstArg) && isMode(secondArg)) {
+    return { mode: secondArg, target: firstArg };
+  }
+
+  return null;
+}
+
 function parseEnvFile(filePath: string) {
+  if (!existsSync(filePath)) {
+    return {};
+  }
+
   const content = readFileSync(filePath, 'utf8');
   const values: Record<string, string> = {};
 
@@ -54,82 +74,41 @@ function parseEnvFile(filePath: string) {
   return values;
 }
 
-function buildTargetEnv(target: Target) {
-  const env = parseEnvFile(envPath);
-  const suffix = target.toUpperCase();
-  const deployment = env[`CONVEX_DEPLOYMENT_${suffix}`];
-  const convexUrl = env[`NEXT_PUBLIC_CONVEX_URL_${suffix}`];
-  const siteUrl = env[`NEXT_PUBLIC_CONVEX_SITE_URL_${suffix}`];
-
-  if (!deployment || !convexUrl || !siteUrl) {
-    throw new Error(`Missing Convex ${target} target variables in .env`);
+function requireEnvValue(env: Record<string, string | undefined>, key: string) {
+  const value = env[key];
+  if (!value) {
+    throw new Error(`Missing required environment variable ${key} in apps/web/.env or process.env`);
   }
-
-  return {
-    ...process.env,
-    ...env,
-    CONVEX_DEPLOYMENT: deployment,
-    NEXT_PUBLIC_CONVEX_URL: convexUrl,
-    NEXT_PUBLIC_CONVEX_SITE_URL: siteUrl,
-  };
+  return value;
 }
 
-function updateOrAppendEnvValue(content: string, key: string, value: string) {
-  const pattern = new RegExp(`^${key}=.*$`, 'm');
+function buildRuntimeEnv(target?: Target) {
+  const envFile = parseEnvFile(envPath);
+  const runtimeEnv = { ...envFile, ...process.env };
 
-  if (pattern.test(content)) {
-    return content.replace(pattern, `${key}=${value}`);
+  if (target) {
+    const suffix = target.toUpperCase();
+    runtimeEnv.CONVEX_DEPLOYMENT = requireEnvValue(runtimeEnv, `CONVEX_DEPLOYMENT_${suffix}`);
+    runtimeEnv.NEXT_PUBLIC_CONVEX_URL = requireEnvValue(
+      runtimeEnv,
+      `NEXT_PUBLIC_CONVEX_URL_${suffix}`,
+    );
+    runtimeEnv.NEXT_PUBLIC_CONVEX_SITE_URL = requireEnvValue(
+      runtimeEnv,
+      `NEXT_PUBLIC_CONVEX_SITE_URL_${suffix}`,
+    );
   }
 
-  const normalized = content.endsWith('\n') ? content : `${content}\n`;
-  return `${normalized}${key}=${value}\n`;
+  requireEnvValue(runtimeEnv, 'CONVEX_DEPLOYMENT');
+  requireEnvValue(runtimeEnv, 'NEXT_PUBLIC_CONVEX_URL');
+  requireEnvValue(runtimeEnv, 'NEXT_PUBLIC_CONVEX_SITE_URL');
+
+  return runtimeEnv;
 }
 
-function cleanupEnvLocal(target: Target) {
-  if (!existsSync(envLocalPath)) {
-    return;
-  }
-
-  if (target === 'dev') {
-    const envLocal = parseEnvFile(envLocalPath);
-    let envContent = readFileSync(envPath, 'utf8');
-
-    const deployment = envLocal.CONVEX_DEPLOYMENT;
-    const convexUrl = envLocal.NEXT_PUBLIC_CONVEX_URL;
-    const siteUrl = envLocal.NEXT_PUBLIC_CONVEX_SITE_URL;
-
-    if (deployment) {
-      envContent = updateOrAppendEnvValue(envContent, 'CONVEX_DEPLOYMENT_DEV', deployment);
-    }
-
-    if (convexUrl) {
-      envContent = updateOrAppendEnvValue(envContent, 'NEXT_PUBLIC_CONVEX_URL_DEV', convexUrl);
-    }
-
-    if (siteUrl) {
-      envContent = updateOrAppendEnvValue(envContent, 'NEXT_PUBLIC_CONVEX_SITE_URL_DEV', siteUrl);
-    }
-
-    writeFileSync(envPath, envContent);
-  }
-
-  unlinkSync(envLocalPath);
-}
-
-async function runConvex(target: Target, mode: Mode) {
-  const env = buildTargetEnv(target);
-  const tempDir = mkdtempSync(join(tmpdir(), 'yokai-convex-'));
-  const tempEnvPath = join(tempDir, '.env.target');
-  writeFileSync(
-    tempEnvPath,
-    [
-      `CONVEX_DEPLOYMENT=${env.CONVEX_DEPLOYMENT ?? ''}`,
-      `NEXT_PUBLIC_CONVEX_URL=${env.NEXT_PUBLIC_CONVEX_URL ?? ''}`,
-      `NEXT_PUBLIC_CONVEX_SITE_URL=${env.NEXT_PUBLIC_CONVEX_SITE_URL ?? ''}`,
-    ].join('\n'),
-  );
-
-  const args = getConvexArgs(target, mode, tempEnvPath);
+async function runConvex(mode: Mode, target?: Target) {
+  const env = buildRuntimeEnv(target);
+  const args = getConvexArgs(mode);
   const exitCode = await new Promise<number>((resolve, reject) => {
     const child = spawn(convexBinPath, args, {
       cwd: rootDir,
@@ -139,9 +118,6 @@ async function runConvex(target: Target, mode: Mode) {
 
     child.on('error', reject);
     child.on('close', (code) => resolve(code ?? 1));
-  }).finally(() => {
-    cleanupEnvLocal(target);
-    rmSync(tempDir, { recursive: true, force: true });
   });
 
   if (exitCode !== 0) {
@@ -149,26 +125,26 @@ async function runConvex(target: Target, mode: Mode) {
   }
 }
 
-function getConvexArgs(target: Target, mode: Mode, tempEnvPath: string) {
+function getConvexArgs(mode: Mode) {
   if (mode === 'watch') {
-    return ['dev', '--env-file', tempEnvPath];
+    return ['dev'];
   }
 
-  if (mode === 'sync' || (target === 'dev' && mode === 'deploy')) {
-    return ['dev', '--once', '--env-file', tempEnvPath];
+  if (mode === 'sync') {
+    return ['dev', '--once'];
   }
 
   if (mode === 'deploy') {
-    return ['deploy', '--env-file', tempEnvPath];
+    return ['deploy'];
   }
 
   if (mode === 'logs') {
-    return target === 'prod' ? ['logs', '--prod'] : ['logs'];
+    return ['logs'];
   }
 
   throw new Error(`Unsupported Convex mode: ${mode}`);
 }
 
-async function main(target: Target, mode: Mode) {
-  await runConvex(target, mode);
+async function main(mode: Mode, target?: Target) {
+  await runConvex(mode, target);
 }

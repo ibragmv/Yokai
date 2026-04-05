@@ -58,6 +58,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             <span>Password</span>
             <input
               autoComplete={setupMode ? 'new-password' : 'current-password'}
+              minLength={10}
               name="password"
               required
               type="password"
@@ -67,7 +68,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           {setupMode ? (
             <label className="field">
               <span>Confirm password</span>
-              <input autoComplete="new-password" name="confirmPassword" required type="password" />
+              <input
+                autoComplete="new-password"
+                minLength={10}
+                name="confirmPassword"
+                required
+                type="password"
+              />
             </label>
           ) : null}
 

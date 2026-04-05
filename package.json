@@ -11,10 +11,10 @@
     "types": "bun run --cwd apps/web types",
     "format": "biome format --write .",
     "check": "bun run lint && bun run types",
-    "convex": "bun run --cwd apps/web scripts/convex-command.ts dev watch",
-    "sync": "bun run --cwd apps/web scripts/convex-command.ts dev sync",
-    "deploy": "bun run --cwd apps/web scripts/convex-command.ts prod deploy",
-    "logs": "bun run --cwd apps/web scripts/convex-command.ts prod logs"
+    "convex": "bun run --cwd apps/web scripts/convex-command.ts watch",
+    "sync": "bun run --cwd apps/web scripts/convex-command.ts sync",
+    "deploy": "bun run --cwd apps/web scripts/convex-command.ts deploy",
+    "logs": "bun run --cwd apps/web scripts/convex-command.ts logs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4"
