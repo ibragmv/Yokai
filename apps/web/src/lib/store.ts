@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { fetchMutation, fetchQuery } from 'convex/nextjs';
 
+import { DEFAULT_MODEL_ID, resolveSupportedModelId } from '@/lib/models';
 import { decryptValue, encryptValue } from '@/lib/security/crypto';
 import type {
   CommandRecord,
@@ -91,7 +92,7 @@ function createDefaultState(): DashboardState {
       requireMention: true,
       autoRecreateSandbox: false,
       timeoutSeconds: 900,
-      defaultModel: 'vercel-ai-gateway/anthropic/claude-sonnet-4.6',
+      defaultModel: DEFAULT_MODEL_ID,
       gatewayAuthToken: randomUUID(),
       updatedAt: null,
     },
@@ -190,6 +191,7 @@ function normalizeState(input: Partial<DashboardState> | null | undefined): Dash
     settings: {
       ...fallback.settings,
       ...input?.settings,
+      defaultModel: resolveSupportedModelId(input?.settings?.defaultModel),
       gatewayAuthToken: input?.settings?.gatewayAuthToken || fallback.settings.gatewayAuthToken,
       updatedAt: input?.settings?.updatedAt ?? fallback.settings.updatedAt,
     },

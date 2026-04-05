@@ -7,6 +7,7 @@ import { requireAdminSession } from '@/lib/auth/session';
 import { loadDashboardPayload } from '@/lib/dashboard/data';
 import { reconcileDashboardLifecycle } from '@/lib/dashboard/orchestration';
 import { fetchGatewayCredits } from '@/lib/gateway/usage';
+import { resolveSupportedModelId } from '@/lib/models';
 import {
   createOpenClawSandbox,
   isOpenClawSandboxRunning,
@@ -49,6 +50,10 @@ async function getResult(ok: boolean, message: string): Promise<DashboardActionR
     message,
     payload: await loadDashboardPayload(),
   };
+}
+
+function normalizeDefaultModelInput(value: string): string {
+  return resolveSupportedModelId(value);
 }
 
 function sanitizeActionError(error: unknown, settings: Parameters<typeof redactSecrets>[1]) {
@@ -98,7 +103,7 @@ export async function saveSettingsAction(
       requireMention: input.requireMention,
       autoRecreateSandbox: input.autoRecreateSandbox,
       timeoutSeconds: input.timeoutSeconds,
-      defaultModel: input.defaultModel,
+      defaultModel: normalizeDefaultModelInput(input.defaultModel),
       gatewayAuthToken: state.settings.gatewayAuthToken || randomUUID(),
       updatedAt: Date.now(),
     },

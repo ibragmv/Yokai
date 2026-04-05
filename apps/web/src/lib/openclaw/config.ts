@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { OPENCLAW_PROVIDER_MODELS, resolveSupportedModelId } from '@/lib/models';
 import type { DashboardSettings } from '@/lib/types';
 import { splitCsv } from '@/lib/utils';
 
@@ -30,7 +31,7 @@ export function buildOpenClawConfig(settings: DashboardSettings): string {
         defaults: {
           workspace: '/vercel/sandbox/openclaw/workspace',
           model: {
-            primary: settings.defaultModel,
+            primary: resolveSupportedModelId(settings.defaultModel),
           },
         },
       },
@@ -41,22 +42,7 @@ export function buildOpenClawConfig(settings: DashboardSettings): string {
             baseUrl: 'https://ai-gateway.vercel.sh/v1',
             apiKey: '${AI_GATEWAY_API_KEY}',
             api: 'openai-completions',
-            models: [
-              {
-                id: 'google/gemini-3-flash',
-                name: 'Gemini 3 Flash',
-                reasoning: false,
-                input: ['text'],
-                contextWindow: 1000000,
-                maxTokens: 8192,
-                cost: {
-                  input: 0.5,
-                  output: 3,
-                  cacheRead: 0,
-                  cacheWrite: 0,
-                },
-              },
-            ],
+            models: OPENCLAW_PROVIDER_MODELS,
           },
         },
       },

@@ -1,9 +1,6 @@
 import 'server-only';
 
-export const DEFAULT_MODELS = [
-  'vercel-ai-gateway/google/gemini-3-flash',
-  'vercel-ai-gateway/anthropic/claude-sonnet-4.6',
-] as const;
+import { SUPPORTED_MODEL_IDS, filterSupportedModelIds } from '@/lib/models';
 
 function getToken(apiKey?: string) {
   return apiKey || process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
@@ -12,7 +9,7 @@ function getToken(apiKey?: string) {
 export async function loadAvailableModels(apiKey?: string): Promise<string[]> {
   const token = getToken(apiKey);
   if (!token) {
-    return [...DEFAULT_MODELS];
+    return [...SUPPORTED_MODEL_IDS];
   }
 
   const response = await fetch('https://ai-gateway.vercel.sh/v1/models', {
@@ -23,7 +20,7 @@ export async function loadAvailableModels(apiKey?: string): Promise<string[]> {
     cache: 'no-store',
   });
   if (!response.ok) {
-    return [...DEFAULT_MODELS];
+    return [...SUPPORTED_MODEL_IDS];
   }
 
   const payload = (await response.json()) as { data?: Array<{ id?: string }> };
@@ -34,7 +31,7 @@ export async function loadAvailableModels(apiKey?: string): Promise<string[]> {
     .filter((model): model is string => Boolean(model))
     .slice(0, 50);
 
-  return normalizedModels.length ? normalizedModels : [...DEFAULT_MODELS];
+  return filterSupportedModelIds(normalizedModels);
 }
 
 export async function fetchGatewayCredits(apiKey?: string) {

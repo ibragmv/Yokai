@@ -1,6 +1,7 @@
 import 'server-only';
 
-import { DEFAULT_MODELS, loadAvailableModels } from '@/lib/gateway/usage';
+import { loadAvailableModels } from '@/lib/gateway/usage';
+import { SUPPORTED_MODEL_IDS } from '@/lib/models';
 import { loadStoredSnapshot } from '@/lib/persistence/snapshots';
 import { readDashboardState } from '@/lib/store';
 import type { DashboardState } from '@/lib/store';
@@ -52,7 +53,7 @@ export async function loadDashboardPayload(): Promise<DashboardPayload> {
   ]);
   const availableModels = await loadAvailableModels(state.settings.aiGatewayApiKey || undefined)
     .catch(() => [])
-    .then((models) => (models.length ? models : [...DEFAULT_MODELS]));
+    .then((models) => (models.length ? models : [...SUPPORTED_MODEL_IDS]));
 
   return {
     ...buildDashboardOverviewPayload(state, storedSnapshot),
