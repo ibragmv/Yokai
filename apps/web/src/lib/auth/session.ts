@@ -16,9 +16,6 @@ type SessionCookiePayload = {
 };
 
 export type AdminSession = {
-  credentialId: Id<'credentials'>;
-  login: string;
-  expiresAt: number;
   sessionId: Id<'sessions'>;
 };
 
@@ -75,11 +72,12 @@ export async function readAdminSession(): Promise<AdminSession | null> {
     return null;
   }
 
-  let session: Awaited<ReturnType<typeof fetchQuery<typeof api.auth.validateSession>>> | null =
-    null;
+  let isValidSession: Awaited<
+    ReturnType<typeof fetchQuery<typeof api.auth.validateSession>>
+  > | null = null;
 
   try {
-    session = await fetchQuery(api.auth.validateSession, {
+    isValidSession = await fetchQuery(api.auth.validateSession, {
       sessionId: sessionCookie.sessionId,
       sessionToken: sessionCookie.sessionToken,
     });
@@ -87,12 +85,11 @@ export async function readAdminSession(): Promise<AdminSession | null> {
     return null;
   }
 
-  if (!session) {
+  if (!isValidSession) {
     return null;
   }
 
   return {
-    ...session,
     sessionId: sessionCookie.sessionId,
   };
 }

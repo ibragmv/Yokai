@@ -125,13 +125,11 @@ export const setupAdmin = mutation({
       tokenHash,
       expiresAt: now + SESSION_TTL_MS,
       createdAt: now,
-      lastSeenAt: now,
     });
 
     return {
       sessionId,
       sessionToken,
-      login,
     };
   },
 });
@@ -172,13 +170,11 @@ export const login = mutation({
       tokenHash,
       expiresAt: now + SESSION_TTL_MS,
       createdAt: now,
-      lastSeenAt: now,
     });
 
     return {
       sessionId,
       sessionToken,
-      login,
     };
   },
 });
@@ -193,24 +189,16 @@ export const validateSession = query({
     const session = await ctx.db.get('sessions', args.sessionId);
     const now = Date.now();
     if (!session || session.expiresAt <= now) {
-      return null;
+      return false;
     }
 
     const tokenHash = await sha256Base64Url(args.sessionToken);
     if (tokenHash !== session.tokenHash) {
-      return null;
+      return false;
     }
 
     const credential = await ctx.db.get('credentials', session.credentialId);
-    if (!credential) {
-      return null;
-    }
-
-    return {
-      credentialId: credential._id,
-      login: credential.login,
-      expiresAt: session.expiresAt,
-    };
+    return Boolean(credential);
   },
 });
 

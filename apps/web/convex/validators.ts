@@ -11,7 +11,7 @@ export const settingsValidator = v.object({
   allowedUserIds: v.string(),
   allowedGroupIds: v.string(),
   requireMention: v.boolean(),
-  autoRecreateSandbox: v.optional(v.boolean()),
+  autoRecreateSandbox: v.boolean(),
   timeoutSeconds: v.number(),
   defaultModel: v.string(),
   updatedAt: v.union(v.number(), v.null()),
@@ -67,13 +67,13 @@ export const sandboxValidator = v.union(
     ),
     runtime: v.string(),
     gatewayUrl: v.union(v.string(), v.null()),
-    sourceSnapshotId: v.optional(v.union(v.string(), v.null())),
+    sourceSnapshotId: v.union(v.string(), v.null()),
     activeCpuUsageMs: v.union(v.number(), v.null()),
     networkBytes: v.union(v.number(), v.null()),
     openClawVersion: v.union(v.string(), v.null()),
     errorMessage: v.union(v.string(), v.null()),
-    expiresAt: v.optional(v.union(v.number(), v.null())),
-    lastSnapshotAt: v.optional(v.union(v.number(), v.null())),
+    expiresAt: v.union(v.number(), v.null()),
+    lastSnapshotAt: v.union(v.number(), v.null()),
     startedAt: v.number(),
     updatedAt: v.number(),
   }),
@@ -115,7 +115,7 @@ export const dashboardStatePayloadValidator = v.object({
   settings: settingsValidator,
   encryptedSettings: encryptedSettingsValidator,
   sandbox: sandboxValidator,
-  operationLease: v.optional(v.union(sandboxOperationLeaseValidator, v.null())),
+  operationLease: v.union(sandboxOperationLeaseValidator, v.null()),
   sessions: v.array(sessionRecordValidator),
   commands: v.array(commandRecordValidator),
   usage: v.array(usageSnapshotValidator),
@@ -141,14 +141,6 @@ export const bootstrapStatusValidator = v.object({
 export const authResultValidator = v.object({
   sessionId: v.id('sessions'),
   sessionToken: v.string(),
-  login: v.string(),
 });
 
-export const validatedSessionValidator = v.union(
-  v.object({
-    credentialId: v.id('credentials'),
-    login: v.string(),
-    expiresAt: v.number(),
-  }),
-  v.null(),
-);
+export const validatedSessionValidator = v.boolean();

@@ -37,8 +37,5 @@ export default defineSchema({
     tokenHash: v.string(),
     expiresAt: v.number(),
     createdAt: v.number(),
-    lastSeenAt: v.number(),
-  })
-    .index('by_credential', ['credentialId'])
-    .index('by_token_hash', ['tokenHash']),
+  }),
 });

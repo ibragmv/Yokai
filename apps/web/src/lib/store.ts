@@ -34,13 +34,6 @@ const SECRET_SETTING_KEYS = ['telegramBotToken', 'aiGatewayApiKey', 'gatewayAuth
 
 type SecretSettingKey = (typeof SECRET_SETTING_KEYS)[number];
 type EncryptedField = Awaited<ReturnType<typeof encryptValue>>;
-type LegacySandboxRecord = Omit<
-  SandboxRecord,
-  'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'
-> &
-  Partial<Pick<SandboxRecord, 'sourceSnapshotId' | 'expiresAt' | 'lastSnapshotAt'>>;
-type LegacySettings = Omit<DashboardSettings, SecretSettingKey | 'autoRecreateSandbox'> &
-  Partial<Pick<DashboardSettings, 'autoRecreateSandbox'>>;
 
 type PersistedDashboardState = {
   settings: Omit<DashboardSettings, SecretSettingKey>;
@@ -52,32 +45,9 @@ type PersistedDashboardState = {
   usage: UsageSnapshot[];
 };
 
-type LegacyPersistedDashboardState = Omit<
-  PersistedDashboardState,
-  'settings' | 'encryptedSettings' | 'sandbox' | 'operationLease'
-> & {
-  settings: LegacySettings;
-  encryptedSettings?: Partial<Record<SecretSettingKey, EncryptedField>>;
-  sandbox: LegacySandboxRecord | null;
-  operationLease?: SandboxOperationLease | null;
-};
-
 function isEncryptionAuthError(error: unknown) {
   return (
     error instanceof Error && error.message === 'Unsupported state or unable to authenticate data'
-  );
-}
-
-function isEncryptedField(value: unknown): value is EncryptedField {
-  return Boolean(
-    value &&
-      typeof value === 'object' &&
-      'iv' in value &&
-      typeof value.iv === 'string' &&
-      'tag' in value &&
-      typeof value.tag === 'string' &&
-      'value' in value &&
-      typeof value.value === 'string',
   );
 }
 
@@ -145,16 +115,10 @@ async function serializeState(state: DashboardState): Promise<PersistedDashboard
   };
 }
 
-async function deserializeState(payload: LegacyPersistedDashboardState): Promise<DashboardState> {
-  const fallback = createDefaultState();
+async function deserializeState(payload: PersistedDashboardState): Promise<DashboardState> {
   const decryptedEntries = await Promise.all(
     SECRET_SETTING_KEYS.map(async (key) => {
-      const encryptedValue = payload.encryptedSettings?.[key];
-      if (!isEncryptedField(encryptedValue)) {
-        return [key, fallback.settings[key]] as const;
-      }
-
-      return [key, await decryptValue(encryptedValue)] as const;
+      return [key, await decryptValue(payload.encryptedSettings[key])] as const;
     }),
   );
   const decryptedSettings = Object.fromEntries(decryptedEntries) as Record<
@@ -165,19 +129,10 @@ async function deserializeState(payload: LegacyPersistedDashboardState): Promise
   return normalizeState({
     settings: {
       ...payload.settings,
-      autoRecreateSandbox:
-        payload.settings.autoRecreateSandbox ?? fallback.settings.autoRecreateSandbox,
       ...decryptedSettings,
     },
-    sandbox: payload.sandbox
-      ? {
-          ...payload.sandbox,
-          sourceSnapshotId: payload.sandbox.sourceSnapshotId ?? null,
-          expiresAt: payload.sandbox.expiresAt ?? null,
-          lastSnapshotAt: payload.sandbox.lastSnapshotAt ?? null,
-        }
-      : null,
-    operationLease: payload.operationLease ?? null,
+    sandbox: payload.sandbox,
+    operationLease: payload.operationLease,
     sessions: payload.sessions,
     commands: payload.commands,
     usage: payload.usage,
