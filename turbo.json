@@ -1,0 +1,65 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "globalDependencies": [".env", ".env.example"],
+  "globalEnv": [
+    "AI_GATEWAY_API_KEY",
+    "CONVEX_DEPLOYMENT",
+    "CRON_SECRET",
+    "NEXT_PUBLIC_APP_URL",
+    "NEXT_PUBLIC_CONVEX_SITE_URL",
+    "NEXT_PUBLIC_CONVEX_URL",
+    "VERCEL_OIDC_TOKEN",
+    "YOKAI_ALLOWED_ORIGINS",
+    "YOKAI_ENCRYPTION_KEY"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "env": [
+        "AI_GATEWAY_API_KEY",
+        "CONVEX_DEPLOYMENT",
+        "CRON_SECRET",
+        "NEXT_PUBLIC_APP_URL",
+        "NEXT_PUBLIC_CONVEX_SITE_URL",
+        "NEXT_PUBLIC_CONVEX_URL",
+        "VERCEL_OIDC_TOKEN",
+        "YOKAI_ALLOWED_ORIGINS",
+        "YOKAI_ENCRYPTION_KEY"
+      ],
+      "outputs": [".next/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "types": {
+      "dependsOn": ["typecheck"]
+    },
+    "check": {
+      "dependsOn": ["lint", "typecheck"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "convex": {
+      "cache": false,
+      "persistent": true
+    },
+    "sync": {
+      "cache": false
+    },
+    "deploy": {
+      "cache": false
+    },
+    "logs": {
+      "cache": false
+    },
+    "format": {
+      "cache": false
+    }
+  }
+}

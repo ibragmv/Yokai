@@ -8,7 +8,7 @@ Yokai is a private control room for running OpenClaw inside Vercel Sandbox. It g
 - Convex-backed persistence for state, snapshots, sessions, and command history
 - Request-driven sandbox rollover and recovery
 - Production-safe secret masking and encryption at rest
-- Bun-first single-app repository with a clean self-hosted setup path
+- Bun-first repository with Turborepo task orchestration and a clean self-hosted setup path
 
 ## Feature Highlights
 
