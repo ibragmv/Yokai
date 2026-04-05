@@ -43,6 +43,9 @@ const HANDOFF_BUNDLE_PATH = `${HANDOFF_ROOT}/openclaw-state.tgz`;
 const DEFAULT_RUNTIME = 'node24';
 const GATEWAY_READY_TIMEOUT_MS = 20_000;
 const GATEWAY_READY_POLL_MS = 1_000;
+const GATEWAY_HEALTH_COMMAND_TIMEOUT_MS = 4_000;
+const GATEWAY_HTTP_FALLBACK_TIMEOUT_MS = 2_500;
+const GATEWAY_PROBE_DETAIL_LIMIT = 1_200;
 const SNAPSHOT_EXPIRATION_MS = 0;
 const SESSION_SYNC_TIMEOUT_SECONDS = 20;
 const TELEGRAM_SESSION_KEY_PATTERN = /^agent:([^:]+):telegram:(direct|slash):(.+)$/;
@@ -76,6 +79,29 @@ type BootSandboxResult = {
 };
 
 type SnapshotRestoreMode = 'backup' | 'clean';
+
+type GatewayReadinessProbeResult =
+  | {
+      ready: true;
+      signal: 'openclaw-health' | 'http-fallback';
+      detail: string;
+    }
+  | {
+      ready: false;
+      reason: string;
+      fallbackEligible: boolean;
+    };
+
+type GatewayReadinessResult =
+  | {
+      ready: true;
+      signal: string;
+    }
+  | {
+      ready: false;
+      reason: string;
+      diagnostics: CommandRecord;
+    };
 
 let lifecycleReconcile: Promise<LifecycleReconcileResult> | null = null;
 
@@ -314,23 +340,295 @@ async function restoreOpenClawHandoffBundle(
   });
 }
 
-async function probeGatewayStatus(sandbox: Sandbox) {
+function sanitizeGatewayProbeDetail(value: string | null | undefined, settings: DashboardSettings) {
+  if (!value) {
+    return null;
+  }
+
+  const sanitized = redactSecrets(
+    truncate(stripAnsi(value).trim(), GATEWAY_PROBE_DETAIL_LIMIT),
+    settings,
+  );
+
+  return sanitized?.trim() || null;
+}
+
+function isLikelyMissingHealthCommand(detail: string | null) {
+  if (!detail) {
+    return false;
+  }
+
+  return /(unknown command|no such command|command not found|not found)/i.test(detail);
+}
+
+function formatGatewayProbeFailure(
+  commandLabel: string,
+  exitCode: number | null,
+  stdout: string | null,
+  stderr: string | null,
+  settings: DashboardSettings,
+  timeoutMs?: number,
+) {
+  const detail = sanitizeGatewayProbeDetail(stderr || stdout, settings);
+
+  if (exitCode === 124 && timeoutMs) {
+    return detail
+      ? `${commandLabel} timed out after ${timeoutMs}ms. ${detail}`
+      : `${commandLabel} timed out after ${timeoutMs}ms.`;
+  }
+
+  const exitSummary =
+    typeof exitCode === 'number'
+      ? `${commandLabel} exited with code ${exitCode}.`
+      : `${commandLabel} did not return a usable exit code.`;
+
+  return detail ? `${exitSummary} ${detail}` : exitSummary;
+}
+
+function isHealthyGatewayStatus(status: unknown) {
+  if (typeof status !== 'string') {
+    return false;
+  }
+
+  return ['ok', 'healthy', 'ready', 'running'].includes(status.trim().toLowerCase());
+}
+
+function isValidGatewayHealthSnapshot(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const snapshot = value as Record<string, unknown>;
+
+  if (typeof snapshot.ok === 'boolean') {
+    return snapshot.ok;
+  }
+
+  if (typeof snapshot.healthy === 'boolean') {
+    return snapshot.healthy;
+  }
+
+  if (typeof snapshot.ready === 'boolean') {
+    return snapshot.ready;
+  }
+
+  if (isHealthyGatewayStatus(snapshot.status)) {
+    return true;
+  }
+
+  if (typeof snapshot.error === 'string' && snapshot.error.trim()) {
+    return false;
+  }
+
+  if (
+    typeof snapshot.reason === 'string' &&
+    /fail|error|timeout|unreachable|unhealthy/i.test(snapshot.reason)
+  ) {
+    return false;
+  }
+
+  return Object.keys(snapshot).length > 0;
+}
+
+async function probeGatewayHealthCommand(
+  sandbox: Sandbox,
+  settings: DashboardSettings,
+): Promise<GatewayReadinessProbeResult> {
+  const timeoutSeconds = Math.max(1, Math.ceil((GATEWAY_HEALTH_COMMAND_TIMEOUT_MS + 1_000) / 1000));
+  const result = await sandbox.runCommand({
+    cmd: 'bash',
+    args: [
+      '-lc',
+      [
+        `export OPENCLAW_CONFIG_PATH=${OPENCLAW_ROOT}/openclaw.json`,
+        `export OPENCLAW_STATE_DIR=${OPENCLAW_ROOT}/state`,
+        `timeout ${timeoutSeconds}s openclaw health --json --timeout ${GATEWAY_HEALTH_COMMAND_TIMEOUT_MS}`,
+      ].join(' && '),
+    ],
+    cwd: OPENCLAW_ROOT,
+  });
+  const stdout = await result.stdout();
+  const stderr = await result.stderr();
+  const sanitizedStdout = sanitizeGatewayProbeDetail(stdout, settings);
+  const sanitizedStderr = sanitizeGatewayProbeDetail(stderr, settings);
+
+  if (result.exitCode !== 0) {
+    const detail = sanitizeGatewayProbeDetail(stderr || stdout, settings);
+
+    return {
+      ready: false,
+      reason: formatGatewayProbeFailure(
+        'openclaw health --json',
+        result.exitCode,
+        sanitizedStdout,
+        sanitizedStderr,
+        settings,
+        GATEWAY_HEALTH_COMMAND_TIMEOUT_MS,
+      ),
+      fallbackEligible: result.exitCode === 127 || isLikelyMissingHealthCommand(detail),
+    };
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(stdout.trim());
+  } catch {
+    return {
+      ready: false,
+      reason:
+        sanitizedStdout || sanitizedStderr
+          ? `openclaw health --json returned exit code 0 but the payload was not valid JSON. ${sanitizedStdout || sanitizedStderr}`
+          : 'openclaw health --json returned exit code 0 but the payload was not valid JSON.',
+      fallbackEligible: false,
+    };
+  }
+
+  if (!isValidGatewayHealthSnapshot(parsed)) {
+    return {
+      ready: false,
+      reason:
+        sanitizedStdout || sanitizedStderr
+          ? `openclaw health --json returned an explicit non-healthy snapshot. ${sanitizedStdout || sanitizedStderr}`
+          : 'openclaw health --json returned an explicit non-healthy snapshot.',
+      fallbackEligible: false,
+    };
+  }
+
+  return {
+    ready: true,
+    signal: 'openclaw-health',
+    detail: 'openclaw health --json exited with code 0 and returned a valid JSON health snapshot.',
+  };
+}
+
+async function probeGatewayHttpFallback(
+  sandbox: Sandbox,
+  settings: DashboardSettings,
+): Promise<GatewayReadinessProbeResult> {
   const result = await sandbox.runCommand({
     cmd: 'node',
     args: [
       '-e',
       [
-        "fetch('http://127.0.0.1:18789/', {",
-        "  headers: { Authorization: `Bearer ${process.env.OPENCLAW_GATEWAY_TOKEN ?? ''}` },",
-        '})',
-        '.then((response) => console.log(String(response.status)))',
-        ".catch(() => console.log('000'));",
+        `const timeoutMs = ${GATEWAY_HTTP_FALLBACK_TIMEOUT_MS};`,
+        "const urls = ['/health', '/healthz', '/ready', '/readyz', '/'];",
+        'const successStatuses = new Set([200, 204]);',
+        "const successWords = new Set(['ok', 'healthy', 'ready', 'running']);",
+        'const controllerFor = () => new AbortController();',
+        'const timerFor = (controller) => setTimeout(() => controller.abort(), timeoutMs);',
+        'const normalize = (value) => (typeof value === "string" ? value.trim().toLowerCase() : "");',
+        'const analyzeBody = (path, status, contentType, body) => {',
+        '  const normalizedBody = normalize(body);',
+        '  if (!successStatuses.has(status)) return { ok: false, reason: `unexpected HTTP ${status}` };',
+        "  if (status === 204) return path === '/' ? { ok: false, reason: '204 from root path is not a readiness signal' } : { ok: true, signal: `HTTP 204 ${path}` };",
+        "  if (!normalizedBody) return { ok: false, reason: 'empty body' };",
+        '  try {',
+        '    const parsed = JSON.parse(body);',
+        '    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {',
+        '      const statusValue = normalize(parsed.status);',
+        '      if (parsed.ok === true || parsed.healthy === true || parsed.ready === true || successWords.has(statusValue)) {',
+        '        return { ok: true, signal: `HTTP 200 ${path} with explicit healthy JSON` };',
+        '      }',
+        "      return { ok: false, reason: 'JSON response was not explicitly healthy' };",
+        '    }',
+        "    return { ok: false, reason: 'JSON response was not an object' };",
+        '  } catch {}',
+        '  if (successWords.has(normalizedBody)) {',
+        '    return { ok: true, signal: `HTTP 200 ${path} with explicit healthy text` };',
+        '  }',
+        "  return { ok: false, reason: `body did not contain an explicit healthy signal (${contentType || 'unknown content type'})` };",
+        '};',
+        '(async () => {',
+        '  for (const path of urls) {',
+        '    const controller = controllerFor();',
+        '    const timer = timerFor(controller);',
+        '    try {',
+        '      const response = await fetch(`http://127.0.0.1:18789${path}`, {',
+        '        signal: controller.signal,',
+        '        headers: { Authorization: `Bearer ${process.env.OPENCLAW_GATEWAY_TOKEN ?? ""}` },',
+        '      });',
+        '      clearTimeout(timer);',
+        '      const body = await response.text();',
+        '      const contentType = response.headers.get("content-type") ?? "";',
+        '      const analysis = analyzeBody(path, response.status, contentType, body);',
+        '      if (analysis.ok) {',
+        '        console.log(JSON.stringify({ ready: true, signal: analysis.signal }));',
+        '        return;',
+        '      }',
+        '      console.log(JSON.stringify({ ready: false, path, status: response.status, reason: analysis.reason }));',
+        '    } catch (error) {',
+        '      clearTimeout(timer);',
+        '      const message = error instanceof Error ? error.message : String(error ?? "unknown error");',
+        '      console.log(JSON.stringify({ ready: false, path, reason: message }));',
+        '    }',
+        '  }',
+        '})();',
       ].join('\n'),
     ],
     cwd: OPENCLAW_ROOT,
   });
+  const stdout = (await result.stdout()).trim();
+  const stderr = await result.stderr();
+  const lastLine = stdout.split('\n').filter(Boolean).at(-1) ?? '';
+  const sanitizedStderr = sanitizeGatewayProbeDetail(stderr, settings);
 
-  return (await result.stdout()).trim();
+  if (result.exitCode !== 0) {
+    return {
+      ready: false,
+      reason: formatGatewayProbeFailure(
+        'gateway HTTP fallback probe',
+        result.exitCode,
+        stdout,
+        sanitizedStderr,
+        settings,
+        GATEWAY_HTTP_FALLBACK_TIMEOUT_MS,
+      ),
+      fallbackEligible: false,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(lastLine) as {
+      ready?: boolean;
+      signal?: string;
+      path?: string;
+      status?: number;
+      reason?: string;
+    };
+
+    if (parsed.ready && parsed.signal) {
+      return {
+        ready: true,
+        signal: 'http-fallback',
+        detail: parsed.signal,
+      };
+    }
+
+    const detailParts = [
+      parsed.path ? `path ${parsed.path}` : null,
+      typeof parsed.status === 'number' ? `HTTP ${parsed.status}` : null,
+      parsed.reason ? parsed.reason : null,
+    ].filter((part): part is string => Boolean(part));
+
+    return {
+      ready: false,
+      reason:
+        detailParts.length > 0
+          ? `Gateway HTTP fallback probe did not find an explicit healthy response: ${detailParts.join(', ')}.`
+          : 'Gateway HTTP fallback probe did not find an explicit healthy response.',
+      fallbackEligible: false,
+    };
+  } catch {
+    return {
+      ready: false,
+      reason:
+        sanitizeGatewayProbeDetail(stdout, settings) || sanitizedStderr
+          ? `Gateway HTTP fallback probe returned an unreadable result. ${sanitizeGatewayProbeDetail(stdout, settings) || sanitizedStderr}`
+          : 'Gateway HTTP fallback probe returned an unreadable result.',
+      fallbackEligible: false,
+    };
+  }
 }
 
 async function readGatewayDiagnostics(
@@ -355,22 +653,55 @@ async function readGatewayDiagnostics(
   });
 }
 
+async function probeGatewayReadiness(
+  sandbox: Sandbox,
+  settings: DashboardSettings,
+): Promise<GatewayReadinessProbeResult> {
+  const primaryProbe = await probeGatewayHealthCommand(sandbox, settings);
+  if (primaryProbe.ready || !primaryProbe.fallbackEligible) {
+    return primaryProbe;
+  }
+
+  const fallbackProbe = await probeGatewayHttpFallback(sandbox, settings);
+  if (fallbackProbe.ready) {
+    return fallbackProbe;
+  }
+
+  return {
+    ready: false,
+    reason: `${primaryProbe.reason} HTTP fallback also failed: ${fallbackProbe.reason}`,
+    fallbackEligible: false,
+  };
+}
+
 async function waitForGatewayReady(
   sandbox: Sandbox,
   settings: DashboardSettings,
-): Promise<CommandRecord | null> {
+): Promise<GatewayReadinessResult> {
   const deadline = Date.now() + GATEWAY_READY_TIMEOUT_MS;
+  let lastFailureReason =
+    'Gateway readiness check did not return an explicit healthy signal before timeout.';
 
   while (Date.now() < deadline) {
-    const statusCode = await probeGatewayStatus(sandbox);
-    if (statusCode && statusCode !== '000') {
-      return null;
+    const probe = await probeGatewayReadiness(sandbox, settings);
+    if (probe.ready) {
+      return {
+        ready: true,
+        signal: probe.detail,
+      };
     }
 
+    lastFailureReason = probe.reason;
     await sleep(GATEWAY_READY_POLL_MS);
   }
 
-  return await readGatewayDiagnostics(sandbox, settings);
+  const diagnostics = await readGatewayDiagnostics(sandbox, settings);
+
+  return {
+    ready: false,
+    reason: `Gateway readiness check did not pass within ${GATEWAY_READY_TIMEOUT_MS}ms. Last probe failure: ${lastFailureReason}`,
+    diagnostics,
+  };
 }
 
 async function createSandboxInstance(
@@ -480,9 +811,16 @@ async function bootOpenClawSandbox(
     });
     commands.push(gatewayCommand);
 
-    const gatewayDiagnostics = await waitForGatewayReady(sandbox, settings);
-    if (gatewayDiagnostics) {
-      commands.push(gatewayDiagnostics);
+    const gatewayReadiness = await waitForGatewayReady(sandbox, settings);
+    if (!gatewayReadiness.ready) {
+      commands.push(
+        createSystemCommand(
+          sandbox.sandboxId,
+          'system:gateway-readiness-failed',
+          gatewayReadiness.reason,
+        ),
+      );
+      commands.push(gatewayReadiness.diagnostics);
 
       return {
         sandbox,
@@ -490,10 +828,7 @@ async function bootOpenClawSandbox(
           status: 'error',
           sourceSnapshotId: sandbox.sourceSnapshotId ?? restoredSnapshot?.snapshotId ?? null,
           openClawVersion: null,
-          errorMessage:
-            gatewayDiagnostics.stderr ||
-            gatewayDiagnostics.stdout ||
-            'OpenClaw gateway did not become ready before timeout.',
+          errorMessage: gatewayReadiness.reason,
           lastSnapshotAt: restoredSnapshot?.updatedAt ?? null,
         }),
         sessions,
