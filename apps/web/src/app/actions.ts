@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 
 import { requireAdminSession } from '@/lib/auth/session';
 import { loadDashboardPayload } from '@/lib/dashboard/data';
+import { reconcileDashboardLifecycle } from '@/lib/dashboard/orchestration';
 import { fetchGatewayCredits } from '@/lib/gateway/usage';
 import {
   createOpenClawSandbox,
@@ -104,6 +105,9 @@ export async function saveSettingsAction(
   }));
 
   await recordGatewayCredits();
+  if (input.autoRecreateSandbox) {
+    await reconcileDashboardLifecycle().catch(() => {});
+  }
   return getResult(
     true,
     shouldRestartSandbox

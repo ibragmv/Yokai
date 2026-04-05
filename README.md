@@ -286,7 +286,7 @@ bun run logs
 - The dashboard refreshes live data every 15 seconds through the authenticated `/api/overview` endpoint.
 - `Start sandbox` creates a Vercel Sandbox, installs OpenClaw, writes `openclaw.json`, and launches the gateway on port `18789`.
 - `Sync Sessions` fetches OpenClaw session data and appends runtime usage snapshots.
-- When auto-recreate is enabled, Yokai attempts lifecycle reconciliation during page loads, overview refreshes, and rollover endpoint calls.
+- When auto-recreate is enabled, Yokai attempts lifecycle reconciliation on dashboard page loads, after settings saves that keep auto-recreate enabled, and through the rollover endpoint.
 - If a running sandbox reaches its rollover window, Yokai snapshots it, stores the latest handoff bundle in Convex, starts a replacement sandbox, and then stops the previous one.
 - If a sandbox is already gone, Yokai can recreate it from the latest valid backup on the next reconciliation request.
 

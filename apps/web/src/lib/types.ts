@@ -103,6 +103,8 @@ export type DashboardPayload = {
   availableModels: string[];
 };
 
+export type DashboardOverviewPayload = Omit<DashboardPayload, 'availableModels'>;
+
 export type DashboardActionResult = {
   ok: boolean;
   message: string;

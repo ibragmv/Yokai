@@ -1,5 +1,5 @@
 import { readAdminSession } from '@/lib/auth/session';
-import { loadDashboardPayload } from '@/lib/dashboard/data';
+import { loadDashboardOverviewPayload } from '@/lib/dashboard/data';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,7 +21,7 @@ export async function GET() {
     );
   }
 
-  return Response.json(await loadDashboardPayload(), {
+  return Response.json(await loadDashboardOverviewPayload(), {
     headers: {
       'Cache-Control': 'private, no-store, max-age=0',
     },

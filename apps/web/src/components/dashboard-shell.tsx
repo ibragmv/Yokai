@@ -5,6 +5,7 @@ import {
   type SetStateAction,
   useEffect,
   useEffectEvent,
+  useRef,
   useState,
   useTransition,
 } from 'react';
@@ -15,6 +16,7 @@ import { YokaiLogo } from '@/components/yokai-logo';
 import type {
   CommandRecord,
   DashboardActionResult,
+  DashboardOverviewPayload,
   DashboardPayload,
   SandboxRecord,
   SessionRecord,
@@ -512,6 +514,7 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
   const [section, setSection] = useState<Section>('overview');
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const availableModelsRef = useRef(initialData.availableModels);
 
   const savedFormValues = createFormValues(data);
   const isDirty = !isSameForm(draft, savedFormValues);
@@ -526,10 +529,27 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
   const activeLease = data.operationLease;
 
   function applyPayload(payload: DashboardPayload, options?: { preserveDraft?: boolean }) {
+    availableModelsRef.current = payload.availableModels;
     setData(payload);
 
     if (!options?.preserveDraft) {
       setDraft(createFormValues(payload));
+    }
+  }
+
+  function applyOverviewPayload(
+    payload: DashboardOverviewPayload,
+    options?: { preserveDraft?: boolean },
+  ) {
+    const nextPayload = {
+      ...payload,
+      availableModels: availableModelsRef.current,
+    } satisfies DashboardPayload;
+
+    setData(nextPayload);
+
+    if (!options?.preserveDraft) {
+      setDraft(createFormValues(nextPayload));
     }
   }
 
@@ -545,8 +565,8 @@ export function DashboardShell({ initialData }: { initialData: DashboardPayload 
       throw new Error(`Failed to refresh dashboard (${response.status})`);
     }
 
-    const payload = (await response.json()) as DashboardPayload;
-    applyPayload(payload, { preserveDraft });
+    const payload = (await response.json()) as DashboardOverviewPayload;
+    applyOverviewPayload(payload, { preserveDraft });
     return payload;
   }
 

@@ -1,7 +1,7 @@
 import { after } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { reconcileOpenClawSandboxLifecycle } from '@/lib/sandbox/openclaw';
+import { reconcileDashboardLifecycle } from '@/lib/dashboard/orchestration';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   const shouldWait = request.nextUrl.searchParams.get('wait') === '1';
 
   if (shouldWait) {
-    const result = await reconcileOpenClawSandboxLifecycle();
+    const result = await reconcileDashboardLifecycle();
 
     return Response.json(
       {
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
 
   after(async () => {
     try {
-      await reconcileOpenClawSandboxLifecycle();
+      await reconcileDashboardLifecycle();
     } catch (error) {
       console.error('Sandbox rollover failed.', error);
     }
