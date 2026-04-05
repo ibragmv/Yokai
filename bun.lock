@@ -6,6 +6,9 @@
       "name": "yokai",
       "devDependencies": {
         "@biomejs/biome": "1.9.4",
+        "next": "^16.0.0",
+        "react": "^19.1.0",
+        "react-dom": "^19.1.0",
         "turbo": "^2.7.4",
         "typescript": "^5.8.2",
       },
