@@ -2,19 +2,13 @@
 
 Yokai is a private control room for running OpenClaw inside Vercel Sandbox. It gives you a locked-down admin dashboard for booting, rotating, restoring, and observing a single OpenClaw runtime, while Convex persists credentials, state, snapshots, command history, and usage data.
 
-## Deploy Your Own
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/ibragmv/Yokai&project-name=yokai&repository-name=Yokai&root-directory=apps/web&install-command=bun%20install&build-command=bun%20run%20build)
-
-The button clones this repository into a new Vercel project with the `apps/web` app preselected. Yokai also needs a Convex deployment, so treat Vercel as the web host and Convex as the persistent state layer.
-
 ## At a Glance
 
 - Private admin dashboard for a single OpenClaw runtime
 - Convex-backed persistence for state, snapshots, sessions, and command history
 - Request-driven sandbox rollover and recovery
 - Production-safe secret masking and encryption at rest
-- Bun-first workspace with a clean self-hosted setup path
+- Bun-first single-app repository with a clean self-hosted setup path
 
 ## Feature Highlights
 
@@ -36,7 +30,7 @@ The button clones this repository into a new Vercel project with the `apps/web` 
 
 ## Stack
 
-- Bun workspaces
+- Bun
 - Next.js 16 App Router
 - React 19
 - Convex
@@ -77,13 +71,13 @@ Suggested captions:
 
 ```text
 .
-├── apps/web
-│   ├── src/app            # App Router pages, route handlers, server actions
-│   ├── src/components     # Dashboard UI
-│   ├── src/lib            # Auth, store, sandbox, gateway, security logic
-│   ├── convex             # Convex schema, validators, queries, mutations
-│   └── .env.example       # Publish-safe environment template
-├── package.json           # Workspace-level scripts
+├── src/app                # App Router pages, route handlers, server actions
+├── src/components         # Dashboard UI
+├── src/lib                # Auth, store, sandbox, gateway, security logic
+├── convex                 # Convex schema, validators, queries, mutations
+├── scripts                # Local helpers such as Convex command wrappers
+├── .env.example           # Publish-safe environment template
+├── package.json           # App scripts and dependencies
 └── README.md
 ```
 
@@ -107,12 +101,12 @@ bun install
 2. Create your local environment file.
 
 ```bash
-cp apps/web/.env.example apps/web/.env
+cp .env.example .env
 ```
 
-3. Fill in the required values in `apps/web/.env`.
+3. Fill in the required values in `.env`.
 
-4. Sync Convex from the active variables in `apps/web/.env`.
+4. Sync Convex from the active variables in `.env`.
 
 ```bash
 bun run sync
@@ -192,7 +186,7 @@ Without a scheduler, auto-recreate only runs when a dashboard request or overvie
 
 ## Environment Reference
 
-Copy `apps/web/.env.example` to `apps/web/.env` for local work.
+Copy `.env.example` to `.env` for local work.
 
 ### Required
 
@@ -267,10 +261,10 @@ bun run logs
 | `bun run types` | Generate Next.js route types and run TypeScript checks |
 | `bun run check` | Run `lint` and `types` together |
 | `bun run format` | Format the repository with Biome |
-| `bun run convex` | Start Convex dev watch mode with the active `apps/web/.env` values |
-| `bun run sync` | Sync Convex once with the active `apps/web/.env` values |
-| `bun run deploy` | Deploy Convex using the active `apps/web/.env` values |
-| `bun run logs` | Read Convex logs using the active `apps/web/.env` values |
+| `bun run convex` | Start Convex dev watch mode with the active `.env` values |
+| `bun run sync` | Sync Convex once with the active `.env` values |
+| `bun run deploy` | Deploy Convex using the active `.env` values |
+| `bun run logs` | Read Convex logs using the active `.env` values |
 
 ## Production Notes
 
@@ -333,7 +327,7 @@ Yes. The dashboard still works, but Gateway model discovery and credit reporting
 
 ### Which environment file should I commit?
 
-Commit `apps/web/.env.example` only. Keep real credentials in `apps/web/.env`, which is gitignored.
+Commit `.env.example` only. Keep real credentials in `.env`, which is gitignored.
 
 ## Self-Hosted Checklist
 

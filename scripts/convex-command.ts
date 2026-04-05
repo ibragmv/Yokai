@@ -12,9 +12,7 @@ type Mode = 'deploy' | 'logs' | 'sync' | 'watch';
 const command = parseCommand(process.argv.slice(2));
 
 if (!command) {
-  console.error(
-    'Usage: bun run scripts/convex-command.ts <sync|watch|deploy|logs> [dev|prod]',
-  );
+  console.error('Usage: bun run scripts/convex-command.ts <sync|watch|deploy|logs> [dev|prod]');
   process.exit(1);
 }
 
@@ -77,7 +75,7 @@ function parseEnvFile(filePath: string) {
 function requireEnvValue(env: Record<string, string | undefined>, key: string) {
   const value = env[key];
   if (!value) {
-    throw new Error(`Missing required environment variable ${key} in apps/web/.env or process.env`);
+    throw new Error(`Missing required environment variable ${key} in .env or process.env`);
   }
   return value;
 }
