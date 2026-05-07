@@ -243,3 +243,4 @@ export function appendCommand(
 export function appendUsage(usage: UsageSnapshot[], snapshot: UsageSnapshot, limit = 24) {
   return [snapshot, ...usage].slice(0, limit);
 }
+

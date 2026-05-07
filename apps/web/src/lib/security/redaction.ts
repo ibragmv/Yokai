@@ -21,3 +21,4 @@ export function redactSecrets(value: string | null | undefined, settings: Dashbo
     return output.replace(new RegExp(escapeForRegExp(secret), 'g'), '[REDACTED]');
   }, value);
 }
+

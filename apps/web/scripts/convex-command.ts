@@ -141,3 +141,4 @@ function getConvexArgs(mode: Mode) {
 async function main(mode: Mode, target?: Target) {
   await runConvex(mode, target);
 }
+

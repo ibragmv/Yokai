@@ -42,3 +42,4 @@ export function YokaiLogo({ className, subtitle = 'Control room' }: YokaiLogoPro
     </div>
   );
 }
+

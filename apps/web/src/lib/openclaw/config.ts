@@ -72,3 +72,4 @@ export function sandboxEnvironment(settings: DashboardSettings): Record<string, 
     TELEGRAM_BOT_TOKEN: settings.telegramBotToken,
   };
 }
+

@@ -150,3 +150,4 @@ export async function deleteStoredBackupAsset(storageId: StorageAssetId | null |
 
   await fetchMutation(api.snapshots.deleteBackupAsset, { storageId });
 }
+

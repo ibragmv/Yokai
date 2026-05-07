@@ -335,3 +335,4 @@ Commit `apps/web/.env.example` only. Keep real credentials in `apps/web/.env`, w
 - `CRON_SECRET` set for production
 - Scheduler configured if unattended rollover is required
 - First admin account bootstrapped through `/login`
+

@@ -4,3 +4,4 @@
   "installCommand": "bun install",
   "outputDirectory": "apps/web/.next"
 }
+

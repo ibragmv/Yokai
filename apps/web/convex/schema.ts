@@ -39,3 +39,4 @@ export default defineSchema({
     createdAt: v.number(),
   }),
 });
+
